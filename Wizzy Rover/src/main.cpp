@@ -57,7 +57,7 @@
 #endif
 
 #define NUMPIXELS             4     // We have 4 LEDs on the board
-#define NUM_PIXELS_ON_LB      6     // We have 6 LEDs on the front lightbar (FLB)
+#define NUM_PIXELS_ON_FLB      6    // We have 6 LEDs on the front lightbar (FLB)
 #define NUM_PIXELS_ON_RLB     6     // We have 6 LEDs on the rear lightbar (RLB)
 #define NUM_PIXELS_ON_GELB    12    // 6 on each LB
 
@@ -141,7 +141,7 @@ int _lightCal;
 int _lightVal;
 
 Adafruit_NeoPixel _builtInLEDs(NUMPIXELS, PIN_PIXELS, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel _frontLightbar(NUM_PIXELS_ON_LB, PIN_PIXELS_FLB, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel _frontLightbar(NUM_PIXELS_ON_FLB, PIN_PIXELS_FLB, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel _rearLightbar(NUM_PIXELS_ON_RLB, PIN_PIXELS_RLB, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel _groundEffectLB(NUM_PIXELS_ON_GELB, PIN_PIXELS_GELB, NEO_GRB + NEO_KHZ800);
 
@@ -229,6 +229,18 @@ void setup()
 {
   pinMode(PIN_PIXELS_GELB, OUTPUT);
   digitalWrite(PIN_PIXELS_GELB, LOW);
+#define PIN_FLB_SWITCH        14    // Flips the transistor switch on/off (high is on, closes the circuit)
+#define PIN_PIXELS_RLB        15    // Wizzy Lightbar (rear lightbar) signal/DIN pin...this one will be available
+#define PIN_PIXELS            18    // Our LEDs are hardwired to pin 18
+#define PIN_BUZZER            19    // The buzzer is hardwired to pin 19
+#define PIN_PIXELS_GELB       23    // Ground effect LB's
+#define PIN_XSHUT_REAR_LOX    25    // shutdown pin for rear facing LOX
+#define PIN_BT_CONNECTED_LED  26    // Blue LED indicated BT connection established
+#define PIN_PIXELS_FLB        27    // Lightbar signal/DIN pin...this will control both front & rear LB
+#define PIN_DEBUG_LED         32    // Turns on/off the white debug led 
+#define PIN_XSHUT_FRONT_LOX   33    // shutdown pin for front facing LOX
+#define PIN_DEMO_MODE         34    // when set high, causes the code to run in BW demo mode
+#define PIN_PHOTORESISTOR     35    // Reads the photoresistor analog value
 
   _groundEffectLB.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
   _groundEffectLB.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
@@ -745,7 +757,7 @@ void TurnOnFrontLightbar(bool Manually)
 void LightTheFrontBar(uint8_t R, uint8_t G, uint8_t B)
 {
   //setup the lightbar to show, but don't turn it on just yet
-  for (int j = 0; j < NUM_PIXELS_ON_LB; j++)
+  for (int j = 0; j < NUM_PIXELS_ON_FLB; j++)
   {
     _frontLightbar.setPixelColor(j, _frontLightbar.Color(R, G, B));
   }
@@ -935,7 +947,7 @@ void StrobeLightbar()
     _frontLightbar.show();
     delay(100);
 
-    //long _Pixel = random(NUM_PIXELS_ON_LB);
+    //long _Pixel = random(NUM_PIXELS_ON_FLB);
     uint8_t _FadeTo = 255;
 
     //BlinkDebugLED(5);
@@ -944,7 +956,7 @@ void StrobeLightbar()
     for ( int z = 0; z < _TimesToStrobe; z++ )
     {
       //going left to right
-      for ( int j = 0; j < NUM_PIXELS_ON_LB; j++ )
+      for ( int j = 0; j < NUM_PIXELS_ON_FLB; j++ )
       {
         if ( j > 0 )
         {
@@ -961,7 +973,7 @@ void StrobeLightbar()
           _frontLightbar.setPixelColor((j - 1), _frontLightbar.Color(0, 0, _FadeTo));
         }
 
-        if ( j < NUM_PIXELS_ON_LB)
+        if ( j < NUM_PIXELS_ON_FLB)
         {
           _frontLightbar.setPixelColor(j, _frontLightbar.Color(0, 0, 255));
         }
@@ -974,11 +986,11 @@ void StrobeLightbar()
       //BlinkDebugLED(5);
 
       //going right to left
-      for ( int j = (NUM_PIXELS_ON_LB - 1); j >= 0 ; j-- )
+      for ( int j = (NUM_PIXELS_ON_FLB - 1); j >= 0 ; j-- )
       {
-        if ( j < (NUM_PIXELS_ON_LB - 1) )
+        if ( j < (NUM_PIXELS_ON_FLB - 1) )
         {
-          for ( int x = (NUM_PIXELS_ON_LB - 1); x > j; x-- )
+          for ( int x = (NUM_PIXELS_ON_FLB - 1); x > j; x-- )
           {
             // _FadeTo = (_FadeTo / 2);
             uint32_t _Color = _frontLightbar.getPixelColor((j + 1));
@@ -1041,7 +1053,7 @@ void StrobeLightbarDemoMode()
     _frontLightbar.show();
     delay(100);
 
-    //long _Pixel = random(NUM_PIXELS_ON_LB);
+    //long _Pixel = random(NUM_PIXELS_ON_FLB);
     uint8_t _FadeTo = 255;
 
     //BlinkDebugLED(5);
@@ -1050,7 +1062,7 @@ void StrobeLightbarDemoMode()
     for ( int z = 0; z < _TimesToStrobe; z++ )
     {
       //going left to right
-      for ( int j = 0; j < NUM_PIXELS_ON_LB; j++ )
+      for ( int j = 0; j < NUM_PIXELS_ON_FLB; j++ )
       {
         if ( j > 0 )
         {
@@ -1067,7 +1079,7 @@ void StrobeLightbarDemoMode()
           _frontLightbar.setPixelColor((j - 1), _frontLightbar.Color(0, 0, _FadeTo));
         }
 
-        if ( j < NUM_PIXELS_ON_LB)
+        if ( j < NUM_PIXELS_ON_FLB)
         {
           _frontLightbar.setPixelColor(j, _frontLightbar.Color(0, 0, 255));
         }
@@ -1080,11 +1092,11 @@ void StrobeLightbarDemoMode()
       //BlinkDebugLED(5);
 
       //going right to left
-      for ( int j = (NUM_PIXELS_ON_LB - 1); j >= 0 ; j-- )
+      for ( int j = (NUM_PIXELS_ON_FLB - 1); j >= 0 ; j-- )
       {
-        if ( j < (NUM_PIXELS_ON_LB - 1) )
+        if ( j < (NUM_PIXELS_ON_FLB - 1) )
         {
-          for ( int x = (NUM_PIXELS_ON_LB - 1); x > j; x-- )
+          for ( int x = (NUM_PIXELS_ON_FLB - 1); x > j; x-- )
           {
             // _FadeTo = (_FadeTo / 2);
             uint32_t _Color = _frontLightbar.getPixelColor((j + 1));
@@ -1819,7 +1831,7 @@ void FlashFrontLightbar(bool FlashRandomly)
 
     if ( !FlashRandomly)
     {
-      for ( int j = 0; j < NUM_PIXELS_ON_LB; j++ )
+      for ( int j = 0; j < NUM_PIXELS_ON_FLB; j++ )
       {
         if ( j > 0 )
         {
@@ -1831,9 +1843,9 @@ void FlashFrontLightbar(bool FlashRandomly)
         delay(100);
       }
 
-      for ( int j = (NUM_PIXELS_ON_LB - 1); j >= 0 ; j-- )
+      for ( int j = (NUM_PIXELS_ON_FLB - 1); j >= 0 ; j-- )
       {
-        if ( j < (NUM_PIXELS_ON_LB - 1) )
+        if ( j < (NUM_PIXELS_ON_FLB - 1) )
         {
           _frontLightbar.setPixelColor((j + 1), _frontLightbar.Color(0, 0, 0));
         }
@@ -1848,32 +1860,32 @@ void FlashFrontLightbar(bool FlashRandomly)
     }
     else
     {
-      long _Pixel = random(NUM_PIXELS_ON_LB);
+      long _Pixel = random(NUM_PIXELS_ON_FLB);
 
       _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(255, 0, 0));
       _frontLightbar.show();
       delay(100);
       _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(0, 0, 0));
 
-      _Pixel = random(NUM_PIXELS_ON_LB);
+      _Pixel = random(NUM_PIXELS_ON_FLB);
       _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(255, 0, 0));
       _frontLightbar.show();
       delay(100);
       _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(255, 0, 0));
 
-      _Pixel = random(NUM_PIXELS_ON_LB);
+      _Pixel = random(NUM_PIXELS_ON_FLB);
       _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(0, 0, 0));
       _frontLightbar.show();
       delay(100);
       _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(0, 0, 0));
 
-      _Pixel = random(NUM_PIXELS_ON_LB);
+      _Pixel = random(NUM_PIXELS_ON_FLB);
       _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(255, 0, 0));
       _frontLightbar.show();
       delay(100);
       _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(255, 0, 0));
 
-      _Pixel = random(NUM_PIXELS_ON_LB);
+      _Pixel = random(NUM_PIXELS_ON_FLB);
       _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(0, 0, 0));
       _frontLightbar.show();
       delay(100);
