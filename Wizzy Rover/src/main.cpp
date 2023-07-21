@@ -1,3 +1,35 @@
+/*
+  ACBR RGB One
+
+  Controls the rover used for the HSU Foundation & Be The Magic Foundation Summer Class 2021 (Wizzy Rover).
+
+  Hx: 
+  05.24.21 DJP - Started coding
+  05.25.21 DJP - Added headlight functionality
+  05.29.21 DJP - Added obstacle avoidance LiDar sensors
+  06.01.21 DJP - Added topside leds for better visibility of rover status in sunlight
+  07.07.21 DJP - Changed "star" button on controller to show a red & blue back & forth fade
+  07.07.21 DJP - Tweaked lightbar light sensitivity due to new location of the photoresistor
+  07.07.21 DJP - Tweaked LiDar sensitivity due to new location of the LiDar sensors
+  07.29.21 DJP - Incorporated Doug & Sarah's in class changes
+  08.03.21 DJP - Moved code from the OnNotify() to the Loop() to resolve BT response issues between the PS3 and the ESP32
+  08.04.21 DJP - Changed ReadLiDarSensors() to not clear the ground effect leds between reads when ground effect is on
+  07.22.22 DJP - Changed SetupLiDarSensort() to not entire a never ending while loop when a LiDar sensor fails to initialize
+  07.23.22 DJP - Added toggle option to turn on/off LiDar via PS3 L1 & R1 combination
+  08.03.22 DJP - Added ground effect lighting
+  08.15.22 DJP - Added Bit-Wizards demo mode, by setting pin 34 high the ground effect lighting and FLB strobe blue & yellow
+                    keeping pin 34 low keeps the rover in normal mode (non-Demo mode)...for testing, I used a jumper between pin 34
+                    and pin 0 to turn on demo mode, leaving 34 empty or using a pin already in low state (IE pin 2) will take it out 
+                    of demo mode...this can be done on the fly
+  07.20.23 DJP - Changed debug led functionality as follows:
+                  1) The blue led on the hat of the Wizzy controller board will blink 3 times if not BT connection and will otherwise
+                     stay on (blue)
+                  2) The white eyes on the face of the Wizzy controller board are the debug leds and will blink accordingly depending 
+                     on the issue detected
+  07.20.23 DJP - Changed front & rear lightbars to function as one lightbar
+  07.20.23 DJP - Added ground effect lightbars as part of the standard rover startup
+*/
+
 //confirm the com is correct in platform.ini file then open a new terminal window, key in the following and press enter: pio run --target upload
 
 //run sixaxispair.exe to determine the address of the PS3 controller, the default address is 01:02:03:04:05:06.  The default will work as long as
@@ -26,20 +58,25 @@
 
 #define NUMPIXELS             4     // We have 4 LEDs on the board
 #define NUM_PIXELS_ON_LB      6     // We have 6 LEDs on the front lightbar (FLB)
-#define NUM_PIXELS_ON_WLB     12    // We have 12 LEDs ont he wizzy LBs
+#define NUM_PIXELS_ON_RLB     6     // We have 6 LEDs on the rear lightbar (RLB)
 #define NUM_PIXELS_ON_GELB    12    // 6 on each LB
 
 #define PIN_FLB_SWITCH        14    // Flips the transistor switch on/off (high is on, closes the circuit)
+#define PIN_PIXELS_RLB        15    // Wizzy Lightbar (rear lightbar) signal/DIN pin...this one will be available
 #define PIN_PIXELS            18    // Our LEDs are hardwired to pin 18
 #define PIN_BUZZER            19    // The buzzer is hardwired to pin 19
 #define PIN_PIXELS_GELB       23    // Ground effect LB's
 #define PIN_XSHUT_REAR_LOX    25    // shutdown pin for rear facing LOX
 #define PIN_BT_CONNECTED_LED  26    // Blue LED indicated BT connection established
-#define PIN_PIXELS_WLB        27    // Lightbar signal/DIN pin...this will control both front & rear LB
+#define PIN_PIXELS_FLB        27    // Lightbar signal/DIN pin...this will control both front & rear LB
 #define PIN_DEBUG_LED         32    // Turns on/off the white debug led 
 #define PIN_XSHUT_FRONT_LOX   33    // shutdown pin for front facing LOX
 #define PIN_DEMO_MODE         34    // when set high, causes the code to run in BW demo mode
 #define PIN_PHOTORESISTOR     35    // Reads the photoresistor analog value
+
+enum Color { UNKNOWN, RED, WHITE, BLUE };
+Color _isRedWhiteOrBlue = RED;
+Color _nextColor = UNKNOWN;
 
 //arduino IDE allows this, but PlatformIO fails...both allow the uint8_t
 //#define FRONT_FACING_LOX_I2C_ADDR 0x30; //the I2C address for the front facing lox
@@ -62,6 +99,8 @@ int _redValue = 0;
 int _color = 1;
 
 //use SixAxisPairTool to set a custom mac address...the address below is the default that ships on the device
+//char _ps3MacAddr[20] = { "01:02:03:04:05:06" };
+//char _ps3MacAddr[20] = { "21:02:03:04:05:02"}; //2021 class
 char _ps3MacAddr[20] = {"22:07:24:04:05:16"}; //2022 class
 
 uint8_t _lbBrightness = 128;
@@ -101,18 +140,17 @@ int _loopsBetweenBlinks = 0;
 int _lightCal;
 int _lightVal;
 
-// declare lightbar variables
 Adafruit_NeoPixel _builtInLEDs(NUMPIXELS, PIN_PIXELS, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel _wizzyLightbars(NUM_PIXELS_ON_LB, PIN_PIXELS_WLB, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel _frontLightbar(NUM_PIXELS_ON_LB, PIN_PIXELS_FLB, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel _rearLightbar(NUM_PIXELS_ON_RLB, PIN_PIXELS_RLB, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel _groundEffectLB(NUM_PIXELS_ON_GELB, PIN_PIXELS_GELB, NEO_GRB + NEO_KHZ800);
-// declare LiDar variables
+
 Adafruit_VL53L0X _frontLox = Adafruit_VL53L0X();
 Adafruit_VL53L0X _rearLox = Adafruit_VL53L0X();
 // this holds the lidar measurement 
 VL53L0X_RangingMeasurementData_t _front_LOX_Measure;
 VL53L0X_RangingMeasurementData_t _rear_LOX_Measure;
 
-// method prototypes
 bool IsRunningInDemoMode();
 void BlinkDebugLED(int BlinkXTimes);
 void FlashFrontLightbar(bool FlashRandomly = false);                  //flashes the leds running across the lightbar
@@ -125,6 +163,8 @@ void SetupLidarSensors();
 void ReadLidarSensors();
 void BlinkBuiltInLEDs(uint8_t R = 0, uint8_t G = 255, uint8_t B = 0);
 void TurnOnFrontLightbar(bool Manually = false);
+void LightTheGE(uint8_t R, uint8_t G, uint8_t B);
+void ChaserGE(uint8_t R, uint8_t G, uint8_t B, bool RandomTrailTaper = false);
 void StrobeLightbar();
 void StrobeLightbarDemoMode();
 void LightTheFrontBar(uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);  //sets the lightbar (all leds) to the passed in color
@@ -144,7 +184,6 @@ void loop_dbg();
 //- need to be able to speed the rover up by determining how far forward/aft the joystick is
 //- code up left & right joystick movement (the x axis)
 
-//method implementations
 void setup_debug()
 {
   // Setup the motors
@@ -165,28 +204,28 @@ void setup_LEDs()
 
   delay(250);
 
-  _wizzyLightbars.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _wizzyLightbars.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+  _rearLightbar.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  _rearLightbar.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
 
   delay(250);
 
   //FlashRearLightbar();
   
-  _wizzyLightbars.clear();
-  _wizzyLightbars.show();
+  _rearLightbar.clear();
+  _rearLightbar.show();
   digitalWrite(PIN_FLB_SWITCH, HIGH);
 
   delay(250);
   digitalWrite(PIN_FLB_SWITCH, LOW);
 
   LightTheRearBar(0, 0, 255);
-  _wizzyLightbars.show();
+  _rearLightbar.show();
   digitalWrite(PIN_FLB_SWITCH, HIGH);
 
   _isTestingLEDsOnly = true;
 }
 
-void setupGE()
+void setup()
 {
   pinMode(PIN_PIXELS_GELB, OUTPUT);
   digitalWrite(PIN_PIXELS_GELB, LOW);
@@ -196,18 +235,51 @@ void setupGE()
 
   delay(250);
 
-  ToggleGroundEffect(0, 0, 255, true, false);
+  LightTheGE(0, 0, 255);
   delay(1000);
 }
 
-void loopGE()
+void loop()
 {
-  ToggleGroundEffect();
-  delay(1000);
+  uint8_t red = (uint8_t)0; //random(256);
+  uint8_t white = (uint8_t)0; //random(256);
+  uint8_t blue = (uint8_t)255; //random(256);
+  
+  switch (_isRedWhiteOrBlue)
+  {
+    case RED: 
+    {
+      red = (uint8_t)255;  
+      white = 0;  
+      blue = 0;  
+      _nextColor = WHITE; 
+      break;
+    }
+    case WHITE: 
+    {
+      red = (uint8_t)255;  
+      white = (uint8_t)255;  
+      blue = (uint8_t)255;  
+      _nextColor = BLUE; 
+      break;
+    }
+    default: 
+    {
+      red = 0;  
+      white = 0;  
+      blue = (uint8_t)255;  
+      _nextColor = RED; 
+      break;
+    }
+  }
+
+  ChaserGE(red,white,blue);
+
+  _isRedWhiteOrBlue = _nextColor;
 }
 
 //NOTE:  if the LiDar sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
-void setup() 
+void setup1() 
 {
   pinMode(PIN_DEMO_MODE, INPUT_PULLDOWN);
 
@@ -217,7 +289,10 @@ void setup()
   digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
   delay(500);
 
-  setupGE();
+  _isRedWhiteOrBlue = RED;
+  _nextColor = WHITE;
+
+  //setupGE();
 
   // Setup the motors
   ledcSetup(1, 30000, 8); //we set up PWM channel 1, frequency of 30,000 Hz, 8 bit resolution
@@ -256,13 +331,13 @@ void setup()
 
   delay(250);
 
-  _wizzyLightbars.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _wizzyLightbars.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+  _frontLightbar.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  _frontLightbar.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
 
   delay(250);
 
-  _wizzyLightbars.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _wizzyLightbars.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+  _rearLightbar.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  _rearLightbar.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
 
   delay(250);
 
@@ -286,12 +361,12 @@ void setup()
   _builtInLEDs.clear();
   _builtInLEDs.show();
   //Turn on the rear bar...used for testing
-  //_wizzyLightbars.clear();
+  //_rearLightbar.clear();
   //LightTheRearBar();
   //_earLightbar.show();
 
   _lbBrightness = 128;
-  _wizzyLightbars.setBrightness(_lbBrightness); 
+  _frontLightbar.setBrightness(_lbBrightness); 
 
   //Serial.begin(115200);
   
@@ -348,7 +423,7 @@ void loop_debug()
   delay(500);
 }
 
-void loop()
+void loop1()
 {
   if ( _loopsBetweenBlinks > LOOPS_BETWEEN_BLINKS )
   {
@@ -445,7 +520,7 @@ void loop()
       if ( !_isRearLBOn )
       {
         _isRearLBOn = true;
-        _wizzyLightbars.clear();
+        _rearLightbar.clear();
         uint8_t _Red = random(1, 256);
         uint8_t _Green = random(1, 256);
         uint8_t _Blue = random(1, 256);
@@ -454,11 +529,11 @@ void loop()
       else
       {
         _isRearLBOn = false;
-        _wizzyLightbars.clear();
+        _rearLightbar.clear();
         LightTheRearBar(0, 0, 0);
       }
 
-      _wizzyLightbars.show();
+      _rearLightbar.show();
       _didSquareChange = false;
     }
 
@@ -509,6 +584,65 @@ void loop()
   }
 
   TurnOnFrontLightbar();
+}
+
+void loopChaser()
+{
+  ////uint8_t _Red = random(256);
+  ////uint8_t _Green = random(256);
+  //uint8_t _Blue = random(256);
+
+  //_Blue = random(0, _Blue);
+
+  //_Blue = (_Blue <= 0 ? 256 : _Blue);
+
+  //myLightbar.clear();
+  //myLightbar.show();
+  //delay(100);
+
+  //LightTheBar(0, 0, _Blue);
+  //myLightbar.show();
+  //delay(1000);
+
+  //myLightbar.clear();
+  //myLightbar.show();
+  //delay(100);
+
+  uint8_t red = (uint8_t)0; //random(256);
+  uint8_t white = (uint8_t)0; //random(256);
+  uint8_t blue = (uint8_t)255; //random(256);
+  
+  switch (_isRedWhiteOrBlue)
+  {
+    case RED: 
+    {
+      red = (uint8_t)255;  
+      white = 0;  
+      blue = 0;  
+      _nextColor = WHITE; 
+      break;
+    }
+    case WHITE: 
+    {
+      red = (uint8_t)255;  
+      white = (uint8_t)255;  
+      blue = (uint8_t)255;  
+      _nextColor = BLUE; 
+      break;
+    }
+    default: 
+    {
+      red = 0;  
+      white = 0;  
+      blue = (uint8_t)255;  
+      _nextColor = RED; 
+      break;
+    }
+  }
+
+  ChaserGE(red,white,blue);
+
+  _isRedWhiteOrBlue = _nextColor;
 }
 
 void BlinkDebugLED(int BlinkXTimes)
@@ -562,8 +696,8 @@ void TurnOnFrontLightbar(bool Manually)
     {
       //BlinkDebugLED(5);
       //digitalWrite(PIN_FLB_SWITCH, LOW);
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
+      _frontLightbar.clear();
+      _frontLightbar.show();
       //setting the pin low MUST be called here, setting low prior to the .show will result in low red LEDs shown when the LB should be off
       digitalWrite(PIN_FLB_SWITCH, LOW);
       _areHeadlightsManuallyOn = false;
@@ -572,7 +706,7 @@ void TurnOnFrontLightbar(bool Manually)
     else
     {
       digitalWrite(PIN_FLB_SWITCH, HIGH);
-      _wizzyLightbars.show();
+      _frontLightbar.show();
       _areHeadlightsManuallyOn = true;
       _areHeadlightsOn = true;
     }
@@ -589,7 +723,7 @@ void TurnOnFrontLightbar(bool Manually)
     //the number the more sensitive the circuit will be to variances in light.
     if (_lightVal < _lightCal)
     {
-      _wizzyLightbars.show();
+      _frontLightbar.show();
       digitalWrite(PIN_FLB_SWITCH, HIGH);      
       _areHeadlightsOn = true;
     }
@@ -598,8 +732,8 @@ void TurnOnFrontLightbar(bool Manually)
     {
       if ( !_areHeadlightsManuallyOn )
       {
-        _wizzyLightbars.clear();
-        _wizzyLightbars.show();
+        _frontLightbar.clear();
+        _frontLightbar.show();
         //setting the pin low MUST be called here, setting low prior to the .show will result in low red LEDs shown when the LB should be off
         digitalWrite(PIN_FLB_SWITCH, LOW);
         _areHeadlightsOn = false;
@@ -613,7 +747,7 @@ void LightTheFrontBar(uint8_t R, uint8_t G, uint8_t B)
   //setup the lightbar to show, but don't turn it on just yet
   for (int j = 0; j < NUM_PIXELS_ON_LB; j++)
   {
-    _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(R, G, B));
+    _frontLightbar.setPixelColor(j, _frontLightbar.Color(R, G, B));
   }
 }
 
@@ -622,10 +756,162 @@ void LightTheRearBar(uint8_t R, uint8_t G, uint8_t B)
   //setup the lightbar to show, but don't turn it on just yet
   for (int j = 0; j < NUM_PIXELS_ON_RLB; j++)
   {
-    _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(R, G, B));
+    _rearLightbar.setPixelColor(j, _rearLightbar.Color(R, G, B));
   }
 }
 
+void ChaserGE(uint8_t R, uint8_t G, uint8_t B, bool RandomTrailTaper)
+{
+    uint8_t *colors{new uint8_t[NUM_PIXELS_ON_GELB]{}};
+
+    //go from left to right
+    for (int j = 0; j < NUM_PIXELS_ON_GELB; j++)
+    {
+      for (int p = 0; p < NUM_PIXELS_ON_GELB; p++)
+      {
+        long pixel = p;
+        
+        if ( RandomTrailTaper )
+        {
+          pixel = random(0, p);
+        }
+        
+        uint8_t pixelColor = colors[pixel];
+        //uint8_t pixelColor = colors[p];
+        if ( pixelColor > 0 )
+        {
+          pixelColor = (pixelColor/2);
+          colors[pixel] = pixelColor;
+          //colors[p] = pixelColor;
+          switch (_isRedWhiteOrBlue)
+          {
+            case RED:
+            {
+              _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(pixelColor, G, B));
+              //_groundEffectLB.setPixelColor(p, _groundEffectLB.Color(pixelColor, G, B));
+              break;
+            }
+            case WHITE:
+            {
+              _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(pixelColor, pixelColor, pixelColor));
+              //_groundEffectLB.setPixelColor(p, _groundEffectLB.Color(pixelColor, pixelColor, pixelColor));
+              break;
+            }
+            default:
+            {
+              _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(R, G, pixelColor));
+              //_groundEffectLB.setPixelColor(p, _groundEffectLB.Color(R, G, pixelColor));
+              break;
+            }
+          }
+        }
+      }
+
+      _groundEffectLB.setPixelColor(j, _groundEffectLB.Color(R, G, B));
+      _groundEffectLB.show();
+      switch (_isRedWhiteOrBlue)
+      {
+        case RED:
+        {
+          colors[j] = R;
+          break;
+        }
+        case WHITE:
+        {
+          colors[j] = G;
+          break;
+        }
+        default:
+        {
+          colors[j] = B;
+          break;
+        }
+      }
+      delay(100);
+    }
+
+    //go from right to left
+    for (int j = NUM_PIXELS_ON_GELB; j >= 0; j--)
+    {
+      //if ( (j-1) >= 0)
+      //{
+        for (int p = 0; p < NUM_PIXELS_ON_GELB; p++)
+        {
+          long pixel = p;
+          
+          if ( RandomTrailTaper )
+          {
+            pixel = random(0, p);
+          }
+          
+          uint8_t pixelColor = colors[pixel];
+          //uint8_t pixelColor = colors[p];
+          if ( pixelColor > 0 )
+          {
+            pixelColor = (pixelColor/2);
+            colors[pixel] = pixelColor;
+            //colors[p] = pixelColor;
+            switch (_isRedWhiteOrBlue)
+            {
+              case RED:
+              {
+                _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(pixelColor, G, B));
+                //_groundEffectLB.setPixelColor(p, _groundEffectLB.Color(pixelColor, G, B));
+                break;
+              }
+              case WHITE:
+              {
+                _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(pixelColor, pixelColor, pixelColor));
+                //_groundEffectLB.setPixelColor(p, _groundEffectLB.Color(pixelColor, pixelColor, pixelColor));
+                break;
+              }
+              default:
+              {
+                _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(R, G, pixelColor));
+                //_groundEffectLB.setPixelColor(p, _groundEffectLB.Color(R, G, pixelColor));
+                break;
+              }
+            }
+          }
+        }
+
+        //uint8_t pixelColor = 0;
+        //uint8_t blue = (B/2);
+        //myLightbar.setPixelColor((j-1), myLightbar.Color(R, G, blue));
+      //}
+      
+      _groundEffectLB.setPixelColor(j, _groundEffectLB.Color(R, G, B));
+      _groundEffectLB.show();
+      switch (_isRedWhiteOrBlue)
+      {
+        case RED:
+        {
+          colors[j] = R;
+          break;
+        }
+        case WHITE:
+        {
+          colors[j] = G;
+          break;
+        }
+        default:
+        {
+          colors[j] = B;
+          break;
+        }
+      }
+      delay(100);
+    }
+}
+
+void LightTheGE(uint8_t R, uint8_t G, uint8_t B)
+{
+    //setup the lightbar to show, but don't turn it on just yet
+    for (int j = 0; j < NUM_PIXELS_ON_GELB; j++)
+    {
+      _groundEffectLB.setPixelColor(j, _groundEffectLB.Color(R, G, B));
+    }
+}
 void StrobeLightbar()
 {
     if ( IsRunningInDemoMode() )
@@ -637,16 +923,16 @@ void StrobeLightbar()
     _isStrobeOn  = true;
     if ( _areHeadlightsOn )
     {
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
+      _frontLightbar.clear();
+      _frontLightbar.show();
       //setting the pin low MUST be called here, setting low prior to the .show will result in low red LEDs shown when the LB should be off
       digitalWrite(PIN_FLB_SWITCH, LOW);
     }
 
     digitalWrite(PIN_FLB_SWITCH, HIGH);
     delay(1);
-    _wizzyLightbars.clear();
-    _wizzyLightbars.show();
+    _frontLightbar.clear();
+    _frontLightbar.show();
     delay(100);
 
     //long _Pixel = random(NUM_PIXELS_ON_LB);
@@ -663,7 +949,7 @@ void StrobeLightbar()
         if ( j > 0 )
         {
           // _FadeTo = (_FadeTo / 2);
-          uint32_t _Color = _wizzyLightbars.getPixelColor(j);
+          uint32_t _Color = _frontLightbar.getPixelColor(j);
           if ( _Color > 0 )
           {
             _FadeTo = (_Color / 2);
@@ -672,16 +958,16 @@ void StrobeLightbar()
           {
             _FadeTo = 0;
           }
-          _wizzyLightbars.setPixelColor((j - 1), _wizzyLightbars.Color(0, 0, _FadeTo));
+          _frontLightbar.setPixelColor((j - 1), _frontLightbar.Color(0, 0, _FadeTo));
         }
 
         if ( j < NUM_PIXELS_ON_LB)
         {
-          _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(0, 0, 255));
+          _frontLightbar.setPixelColor(j, _frontLightbar.Color(0, 0, 255));
         }
 
         digitalWrite(PIN_FLB_SWITCH, HIGH);
-        _wizzyLightbars.show();
+        _frontLightbar.show();
         delay(100);
       }
 
@@ -695,7 +981,7 @@ void StrobeLightbar()
           for ( int x = (NUM_PIXELS_ON_LB - 1); x > j; x-- )
           {
             // _FadeTo = (_FadeTo / 2);
-            uint32_t _Color = _wizzyLightbars.getPixelColor((j + 1));
+            uint32_t _Color = _frontLightbar.getPixelColor((j + 1));
             if ( _Color > 0 )
             {
               _FadeTo = (_Color / 2);
@@ -705,24 +991,24 @@ void StrobeLightbar()
               _FadeTo = 0;
             }
 
-            _wizzyLightbars.setPixelColor(x, _wizzyLightbars.Color(_FadeTo, 0, 0));
+            _frontLightbar.setPixelColor(x, _frontLightbar.Color(_FadeTo, 0, 0));
           }
         }
 
         if ( j >= 0 )
         {
-          _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(255, 0, 0));
+          _frontLightbar.setPixelColor(j, _frontLightbar.Color(255, 0, 0));
         }
 
         digitalWrite(PIN_FLB_SWITCH, HIGH);
-        _wizzyLightbars.show();
+        _frontLightbar.show();
         delay(100);
       }
     }
 
-    _wizzyLightbars.clear();
+    _frontLightbar.clear();
     digitalWrite(PIN_FLB_SWITCH, HIGH);
-    _wizzyLightbars.show();
+    _frontLightbar.show();
   
     digitalWrite(PIN_FLB_SWITCH, LOW);
     delay(1);
@@ -731,7 +1017,7 @@ void StrobeLightbar()
     {
       LightTheFrontBar();
       digitalWrite(PIN_FLB_SWITCH, HIGH);
-      _wizzyLightbars.show();
+      _frontLightbar.show();
     }
 
     //BlinkDebugLED(5);
@@ -743,16 +1029,16 @@ void StrobeLightbarDemoMode()
     _isStrobeOn  = true;
     if ( _areHeadlightsOn )
     {
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
+      _frontLightbar.clear();
+      _frontLightbar.show();
       //setting the pin low MUST be called here, setting low prior to the .show will result in low red LEDs shown when the LB should be off
       digitalWrite(PIN_FLB_SWITCH, LOW);
     }
 
     digitalWrite(PIN_FLB_SWITCH, HIGH);
     delay(1);
-    _wizzyLightbars.clear();
-    _wizzyLightbars.show();
+    _frontLightbar.clear();
+    _frontLightbar.show();
     delay(100);
 
     //long _Pixel = random(NUM_PIXELS_ON_LB);
@@ -769,7 +1055,7 @@ void StrobeLightbarDemoMode()
         if ( j > 0 )
         {
           // _FadeTo = (_FadeTo / 2);
-          uint32_t _Color = _wizzyLightbars.getPixelColor(j);
+          uint32_t _Color = _frontLightbar.getPixelColor(j);
           if ( _Color > 0 )
           {
             _FadeTo = (_Color / 2);
@@ -778,16 +1064,16 @@ void StrobeLightbarDemoMode()
           {
             _FadeTo = 0;
           }
-          _wizzyLightbars.setPixelColor((j - 1), _wizzyLightbars.Color(0, 0, _FadeTo));
+          _frontLightbar.setPixelColor((j - 1), _frontLightbar.Color(0, 0, _FadeTo));
         }
 
         if ( j < NUM_PIXELS_ON_LB)
         {
-          _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(0, 0, 255));
+          _frontLightbar.setPixelColor(j, _frontLightbar.Color(0, 0, 255));
         }
 
         digitalWrite(PIN_FLB_SWITCH, HIGH);
-        _wizzyLightbars.show();
+        _frontLightbar.show();
         delay(100);
       }
 
@@ -801,7 +1087,7 @@ void StrobeLightbarDemoMode()
           for ( int x = (NUM_PIXELS_ON_LB - 1); x > j; x-- )
           {
             // _FadeTo = (_FadeTo / 2);
-            uint32_t _Color = _wizzyLightbars.getPixelColor((j + 1));
+            uint32_t _Color = _frontLightbar.getPixelColor((j + 1));
             if ( _Color > 0 )
             {
               _FadeTo = (_Color / 2);
@@ -811,24 +1097,24 @@ void StrobeLightbarDemoMode()
               _FadeTo = 0;
             }
 
-            _wizzyLightbars.setPixelColor(x, _wizzyLightbars.Color(_FadeTo, _FadeTo, 0));
+            _frontLightbar.setPixelColor(x, _frontLightbar.Color(_FadeTo, _FadeTo, 0));
           }
         }
 
         if ( j >= 0 )
         {
-          _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(255, 255, 0));
+          _frontLightbar.setPixelColor(j, _frontLightbar.Color(255, 255, 0));
         }
 
         digitalWrite(PIN_FLB_SWITCH, HIGH);
-        _wizzyLightbars.show();
+        _frontLightbar.show();
         delay(100);
       }
     }
 
-    _wizzyLightbars.clear();
+    _frontLightbar.clear();
     digitalWrite(PIN_FLB_SWITCH, HIGH);
-    _wizzyLightbars.show();
+    _frontLightbar.show();
   
     digitalWrite(PIN_FLB_SWITCH, LOW);
     delay(1);
@@ -837,7 +1123,7 @@ void StrobeLightbarDemoMode()
     {
       LightTheFrontBar();
       digitalWrite(PIN_FLB_SWITCH, HIGH);
-      _wizzyLightbars.show();
+      _frontLightbar.show();
     }
 
     //BlinkDebugLED(5);
@@ -1527,8 +1813,8 @@ void OnConnect()
 void FlashFrontLightbar(bool FlashRandomly)
 {
     digitalWrite(PIN_FLB_SWITCH, HIGH);
-    _wizzyLightbars.clear();
-    _wizzyLightbars.show();
+    _frontLightbar.clear();
+    _frontLightbar.show();
     delay(100);
 
     if ( !FlashRandomly)
@@ -1537,11 +1823,11 @@ void FlashFrontLightbar(bool FlashRandomly)
       {
         if ( j > 0 )
         {
-          _wizzyLightbars.setPixelColor((j - 1), _wizzyLightbars.Color(0, 0, 0));
+          _frontLightbar.setPixelColor((j - 1), _frontLightbar.Color(0, 0, 0));
         }
 
-        _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(255, 255, 255));
-        _wizzyLightbars.show();
+        _frontLightbar.setPixelColor(j, _frontLightbar.Color(255, 255, 255));
+        _frontLightbar.show();
         delay(100);
       }
 
@@ -1549,50 +1835,50 @@ void FlashFrontLightbar(bool FlashRandomly)
       {
         if ( j < (NUM_PIXELS_ON_LB - 1) )
         {
-          _wizzyLightbars.setPixelColor((j + 1), _wizzyLightbars.Color(0, 0, 0));
+          _frontLightbar.setPixelColor((j + 1), _frontLightbar.Color(0, 0, 0));
         }
 
-        _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(255, 255, 255));
-        _wizzyLightbars.show();
+        _frontLightbar.setPixelColor(j, _frontLightbar.Color(255, 255, 255));
+        _frontLightbar.show();
         delay(100);
       }
 
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
+      _frontLightbar.clear();
+      _frontLightbar.show();
     }
     else
     {
       long _Pixel = random(NUM_PIXELS_ON_LB);
 
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-      _wizzyLightbars.show();
+      _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(255, 0, 0));
+      _frontLightbar.show();
       delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
+      _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(0, 0, 0));
 
       _Pixel = random(NUM_PIXELS_ON_LB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-      _wizzyLightbars.show();
+      _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(255, 0, 0));
+      _frontLightbar.show();
       delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
+      _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(255, 0, 0));
 
       _Pixel = random(NUM_PIXELS_ON_LB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
-      _wizzyLightbars.show();
+      _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(0, 0, 0));
+      _frontLightbar.show();
       delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
+      _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(0, 0, 0));
 
       _Pixel = random(NUM_PIXELS_ON_LB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-      _wizzyLightbars.show();
+      _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(255, 0, 0));
+      _frontLightbar.show();
       delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
+      _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(255, 0, 0));
 
       _Pixel = random(NUM_PIXELS_ON_LB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
-      _wizzyLightbars.show();
+      _frontLightbar.setPixelColor(_Pixel, _frontLightbar.Color(0, 0, 0));
+      _frontLightbar.show();
       delay(100);
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
+      _frontLightbar.clear();
+      _frontLightbar.show();
     }
 
     digitalWrite(PIN_FLB_SWITCH, LOW);
@@ -1600,8 +1886,8 @@ void FlashFrontLightbar(bool FlashRandomly)
 
 void FlashRearLightbar(bool FlashRandomly)
 {
-    _wizzyLightbars.clear();
-    _wizzyLightbars.show();
+    _rearLightbar.clear();
+    _rearLightbar.show();
     delay(100);
 
     if ( !FlashRandomly)
@@ -1610,11 +1896,11 @@ void FlashRearLightbar(bool FlashRandomly)
       {
         if ( j > 0 )
         {
-          _wizzyLightbars.setPixelColor((j - 1), _wizzyLightbars.Color(0, 0, 0));
+          _rearLightbar.setPixelColor((j - 1), _rearLightbar.Color(0, 0, 0));
         }
 
-        _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(255, 255, 255));
-        _wizzyLightbars.show();
+        _rearLightbar.setPixelColor(j, _rearLightbar.Color(255, 255, 255));
+        _rearLightbar.show();
         delay(100);
       }
 
@@ -1622,50 +1908,50 @@ void FlashRearLightbar(bool FlashRandomly)
       {
         if ( j < (NUM_PIXELS_ON_RLB - 1) )
         {
-          _wizzyLightbars.setPixelColor((j + 1), _wizzyLightbars.Color(0, 0, 0));
+          _rearLightbar.setPixelColor((j + 1), _rearLightbar.Color(0, 0, 0));
         }
 
-        _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(255, 255, 255));
-        _wizzyLightbars.show();
+        _rearLightbar.setPixelColor(j, _rearLightbar.Color(255, 255, 255));
+        _rearLightbar.show();
         delay(100);
       }
 
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
+      _rearLightbar.clear();
+      _rearLightbar.show();
     }
     else
     {
       long _Pixel = random(NUM_PIXELS_ON_RLB);
 
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-      _wizzyLightbars.show();
+      _rearLightbar.setPixelColor(_Pixel, _rearLightbar.Color(255, 0, 0));
+      _rearLightbar.show();
       delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
+      _rearLightbar.setPixelColor(_Pixel, _rearLightbar.Color(0, 0, 0));
 
       _Pixel = random(NUM_PIXELS_ON_RLB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-      _wizzyLightbars.show();
+      _rearLightbar.setPixelColor(_Pixel, _rearLightbar.Color(255, 0, 0));
+      _rearLightbar.show();
       delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
+      _rearLightbar.setPixelColor(_Pixel, _rearLightbar.Color(255, 0, 0));
 
       _Pixel = random(NUM_PIXELS_ON_RLB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
-      _wizzyLightbars.show();
+      _rearLightbar.setPixelColor(_Pixel, _rearLightbar.Color(0, 0, 0));
+      _rearLightbar.show();
       delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
+      _rearLightbar.setPixelColor(_Pixel, _rearLightbar.Color(0, 0, 0));
 
       _Pixel = random(NUM_PIXELS_ON_RLB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-      _wizzyLightbars.show();
+      _rearLightbar.setPixelColor(_Pixel, _rearLightbar.Color(255, 0, 0));
+      _rearLightbar.show();
       delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
+      _rearLightbar.setPixelColor(_Pixel, _rearLightbar.Color(255, 0, 0));
 
       _Pixel = random(NUM_PIXELS_ON_RLB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
-      _wizzyLightbars.show();
+      _rearLightbar.setPixelColor(_Pixel, _rearLightbar.Color(0, 0, 0));
+      _rearLightbar.show();
       delay(100);
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
+      _rearLightbar.clear();
+      _rearLightbar.show();
     }
 }
 
