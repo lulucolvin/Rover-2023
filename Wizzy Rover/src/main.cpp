@@ -155,24 +155,8 @@ VL53L0X_RangingMeasurementData_t _front_LOX_Measure;
 VL53L0X_RangingMeasurementData_t _rear_LOX_Measure;
 
 void BlinkDebugLED(int BlinkXTimes);
-void LightTheGE(uint8_t R, uint8_t G, uint8_t B);
-void SetupGE();
 void loopGE();
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper = false);
-
-void SetupGE()
-{
-  //pinMode(PIN_PIXELS_GELB, OUTPUT);
-  //digitalWrite(PIN_PIXELS_GELB, LOW);
-
-  _groundEffectLB.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _groundEffectLB.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
-
-  delay(250);
-
-  LightTheGE(0, 0, 255);
-  delay(1000);
-}
 
 void setup()
 {
@@ -208,8 +192,11 @@ void setup()
   _nextColor = WHITE;
 
   BlinkDebugLED(1);
-  delay(1000);
-  SetupGE();
+  
+  _groundEffectLB.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  _groundEffectLB.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+
+  delay(250);
 }
 
 void loopGE()
@@ -251,12 +238,175 @@ void loopGE()
   _isRedWhiteOrBlue = _nextColor;
 }
 
-void loop()
+void loopGE_Dbg()
 {
     loopGE();
 
     // BlinkDebugLED(10);
     // delay(500);
+}
+
+void loop()
+{
+  if ( _loopsBetweenBlinks > LOOPS_BETWEEN_BLINKS )
+  {
+    _loopsBetweenBlinks = 0;
+    BlinkDebugLED(1);
+  }
+  else
+  {
+    _loopsBetweenBlinks++;
+  }
+
+  if ( !Ps3.isConnected() )
+  {
+    for ( int j = 0; j < 3; j++ )
+    {
+      digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
+      delay(100);
+      digitalWrite(PIN_BT_CONNECTED_LED, LOW);
+      delay(100);
+    }
+
+    for ( int j = 0; j < 3; j++ )
+    {
+      //flash the leds blue, but in a circular pattern
+      _builtInLEDs.clear();
+      _builtInLEDs.show();
+      delay(100);
+      _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
+      _builtInLEDs.show();
+      delay(100);
+      _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 0));
+      _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
+      _builtInLEDs.show();
+      delay(100);
+      _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 0));
+      _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
+      _builtInLEDs.show();
+      delay(100);
+      _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 0));
+      _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
+      _builtInLEDs.show();
+      delay(100);
+      _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 0));
+      _builtInLEDs.show();
+      delay(100);
+    }
+
+    //FlashBuiltInLEDs();
+    Ps3.begin(_ps3MacAddr);
+    delay(2000);
+  }
+  else
+  {
+    digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
+
+    //FlashBuiltInLEDsForDebug(255, 255, 255);
+    delay(125);
+    _builtInLEDs.clear();
+    _builtInLEDs.show();
+
+    ReadLidarSensors();
+
+    delay(1);
+
+    if ( _didCircleChange )
+    {      
+      TurnOnFrontLightbar(true);
+      _didCircleChange = false;
+    }
+    // //if(Ps3.event.analog_changed.button.circle)
+    // //if(Ps3.data.button.circle)
+    // if(Ps3.event.analog_changed.button.circle)
+    // {
+    //   if ( Ps3.data.analog.button.circle > 0 )
+    //   {
+    //     TurnOnLightbar(true);
+    //   }
+    // }
+
+    if(_didCrossChange)
+    {
+          _keepFLBDemoStrobeOn = !_keepFLBDemoStrobeOn;
+    
+        Chaser(WHITE, FRONT);
+        _didCrossChange = false;
+    }
+    else if ( _keepFLBDemoStrobeOn )
+    {
+        StrobeLightbar();
+    }
+
+    if(_didSquareChange)
+    {
+      if ( !_isRearLBOn )
+      {
+        _isRearLBOn = true;
+        _rearLightbar.clear();
+        uint8_t _Red = random(1, 256);
+        uint8_t _Green = random(1, 256);
+        uint8_t _Blue = random(1, 256);
+        LightTheRearBar(_Red, _Green, _Blue);
+      }
+      else
+      {
+        _isRearLBOn = false;
+        _rearLightbar.clear();
+        LightTheRearBar(0, 0, 0);
+      }
+
+      _rearLightbar.show();
+      _didSquareChange = false;
+    }
+
+    if(_didTriangleChange)
+    {
+      if ( _didL2Change )
+      {
+        _showGroundEffect = !_showGroundEffect;
+
+        if ( _showGroundEffect ) ToggleGroundEffect();
+      }
+      else
+      {
+        if ( _showGroundEffect ) ToggleGroundEffect();
+
+        if ( _areBuiltInsOn ) TurnBuiltInsOff(); 
+        else                  TurnBuiltInsOn();
+      }
+
+      _didL2Change = false;
+      _didTriangleChange = false;
+    }
+    else
+    {
+      if ( _showGroundEffect ) ToggleGroundEffect(); 
+    }
+
+    if ( _didL1Change || _didR1Change )
+    {
+      _useLiDar = ( _isPS3_L1_Pressed && _isPS3_R1_Pressed ? !_useLiDar : _useLiDar );
+
+      if ( _useLiDar ) 
+      {
+        FlashBuiltInLEDsForDebug(255, 255, 255);
+        delay(200);
+        FlashBuiltInLEDsForDebug(0, 0, 0);
+      }
+      else
+      {
+        FlashBuiltInLEDsForDebug(255, 0, 0);
+        delay(200);
+        FlashBuiltInLEDsForDebug(0, 0, 0);
+      }
+      delay(125);
+      _builtInLEDs.clear();
+      _builtInLEDs.show();
+    }
+  }
+
+  TurnOnFrontLightbar();
 }
 
 void BlinkDebugLED(int BlinkXTimes)
@@ -527,12 +677,446 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
     delete [] colors;
 }
 
-void LightTheGE(uint8_t R, uint8_t G, uint8_t B)
+bool IsRunningInDemoMode()
 {
-    //setup the lightbar to show, but don't turn it on just yet
-    for (int j = 0; j < NUM_PIXELS_ON_GELB; j++)
+  //return false;
+  // pins 34 & zero were used for testing...when pin 34 is jumpered to pin zero then 4095 is read
+  return ( analogRead(PIN_DEMO_MODE) == 4095 );
+}
+
+/*
+    - Reset all sensors by setting all of their XSHUT pins low for delay(10), then set all XSHUT high to bring out of reset
+    - Keep sensor #1 awake by keeping XSHUT pin high
+    - Put all other sensors into shutdown by pulling XSHUT pins low
+    - Initialize sensor #1 with lox.begin(new_i2c_address) Pick any number but 0x29 and it must be under 0x7F. 
+        Going with 0x30 to 0x3F is probably OK.
+    - Keep sensor #1 awake, and now bring sensor #2 out of reset by setting its XSHUT pin high.
+    - Initialize sensor #2 with lox.begin(new_i2c_address) Pick any number but 0x29 and whatever you set the first sensor to
+ */
+void SetupLidarSensors()
+{
+  if ( !_useLiDar ) return;
+
+  //FlashBuiltInLEDsForDebug(255, 255, 255); //white
+
+  // reset both front & rear lidar
+  if ( !_isFrontLidarOn ) digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
+  if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, LOW);
+  delay(50);
+
+  // turn both front & rear lidar on
+  if ( !_isFrontLidarOn ) digitalWrite(PIN_XSHUT_FRONT_LOX, HIGH);
+  if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, HIGH);
+  delay(50);
+
+  // keep the front on, turn off the rear
+  if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, LOW);
+
+  //FlashBuiltInLEDsForDebug(255, 0, 0); //red
+
+  // initing front
+  if ( !_isFrontLidarOn )
+  {
+    if(!_frontLox.begin(FRONT_FACING_LOX_I2C_ADDR)) 
     {
-      _groundEffectLB.setPixelColor(j, _groundEffectLB.Color(R, G, B));
+      FlashBuiltInLEDsForDebug(255, 255, 0); //yellow
+      Serial.println(F("Failed to boot first VL53L0X"));
+      _isFrontLidarOn = false;
     }
+    else
+    {
+      _isFrontLidarOn = true;
+    }
+    delay(50);
+    }
+
+  //FlashBuiltInLEDsForDebug(0, 0, 255); //blue
+
+  // activating rear
+  //digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
+  if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, HIGH);
+  delay(50);
+
+  //initing rear
+  if ( !_isRearLidarOn ) 
+  {
+    if(!_rearLox.begin(REAR_FACING_LOX_I2C_ADDR)) 
+    {
+      FlashBuiltInLEDsForDebug(0, 255, 0); //green
+      Serial.println(F("Failed to boot rear VL53L0X"));
+      _isRearLidarOn = false;
+    }
+    else
+    {
+      _isRearLidarOn = true;
+    }
+  }
+}
+
+void ReadLidarSensors() 
+{
+  if ( !_useLiDar ) 
+  {
+    BlinkDebugLED(2);
+    _isFrontObstacleDetected = false;
+    _isRearObstacleDetected = false;
+    return;
+  }
+  //else
+  //{
+  //  BlinkDebugLED(3);
+  //}
+
+  if ( !_isFrontLidarOn || !_isRearLidarOn ) SetupLidarSensors();
+
+  if ( _isFrontLidarOn ) _frontLox.rangingTest(&_front_LOX_Measure, false); // pass in 'true' to get debug data printout!
+  if ( _isRearLidarOn ) _rearLox.rangingTest(&_rear_LOX_Measure, false);   // pass in 'true' to get debug data printout!
+
+  //Serial.print("Reading a measurement... ");
+  //_FrontLox.rangingTest(&measure, false); // pass in 'true' to get debug data printout!
+  if ( !_areBuiltInsOn )
+  {
+    _builtInLEDs.clear();
+    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(_redValue, 0, 0));   
+    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(_redValue, 0, 0));
+    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(_redValue, 0, 0));
+    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(_redValue, 0, 0));
+    _builtInLEDs.show();
+  }
+
+  bool stopForward = false;
+  bool stopBackward = false;
+
+  //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
+  if ( _isFrontLidarOn )
+  {
+    if (_front_LOX_Measure.RangeStatus != 4) 
+    { // phase failures have incorrect data
+      Serial.print("RedVal): "); Serial.println(_redValue);
+
+      if (_front_LOX_Measure.RangeMilliMeter < 300 ) 
+      {
+        //if ( measure.RangeMilliMeter <= 127) //within 5"
+        if (_front_LOX_Measure.RangeMilliMeter <= 250) //within 7 1/2", 200 is 7 3/4"
+        {
+          stopForward = true;
+          _redValue = 255;
+        }
+        else if ( _redValue < 255)
+        {
+          _redValue+=5;
+        }
+      }
+      else if(_front_LOX_Measure.RangeMilliMeter > 300 && _redValue > 0)  //300mm is 11.811"
+      {
+        _redValue-=5;
+      }
+    } 
+    else 
+    {
+      Serial.println(" out of range ");
+      _redValue = 0;
+    }
+  }
+  else 
+  {
+    Serial.println(" front lox is off ");
+    _redValue = 0;
+  }
+
+  //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
+  if ( _isRearLidarOn )
+  {
+    if (_rear_LOX_Measure.RangeStatus != 4) 
+    { // phase failures have incorrect data
+      Serial.print("RedVal): "); Serial.println(_redValue);
+
+      if (_rear_LOX_Measure.RangeMilliMeter < 300 ) 
+      {
+        //if ( measure.RangeMilliMeter <= 127) //within 5"
+        if (_rear_LOX_Measure.RangeMilliMeter <= 250) //within 7 1/2", 200 is 7 3/4"
+        {
+          stopBackward = true;
+          _redValue = 255;
+        }
+        else if ( _redValue < 255)
+        {
+          _redValue+=5;
+        }
+      }
+      else if(_rear_LOX_Measure.RangeMilliMeter > 300 && _redValue > 0)  //300mm is 11.811"
+      {
+        _redValue-=5;
+      }
+    } 
+    else 
+    {
+      Serial.println(" out of range ");
+      _redValue = 0;
+    }
+  }
+  else 
+  {
+    Serial.println(" rear lox is off ");
+    _redValue = 0;
+  }
+
+  _isFrontObstacleDetected = stopForward;
+  _isRearObstacleDetected = stopBackward;
+
+  if ( (stopForward && _isMovingForward) || (stopBackward && _isMovingBackward) )
+  {       
+    //turn off forward (left side)
+    ledcWrite(1, 0);
+    //turn off reverse (left side)
+    ledcWrite(2, 0);
+
+    //turn off forward (right side)
+    ledcWrite(3, 0);
+    //turn off reverse (right side)
+    ledcWrite(4, 0);
+  }
+}
+
+void OnNotify()
+{
+    //BlinkDebugLED(1);
+
+    _leftX = (Ps3.data.analog.stick.lx);
+    _leftY = (Ps3.data.analog.stick.ly);
+    _rightX = (Ps3.data.analog.stick.rx);
+    _rightY = (Ps3.data.analog.stick.ry);
+
+    if (Ps3.event.analog_changed.button.l1)
+    {
+      _didL1Change = true;
+      _isPS3_L1_Pressed = ( Ps3.data.analog.button.l1 > 0 );
+    }
+
+    if (Ps3.event.analog_changed.button.l2)
+    {
+      _didL2Change = true;
+      _isPS3_L2_Pressed = ( Ps3.data.analog.button.l2 > 0 );
+    }
+
+    if (Ps3.event.analog_changed.button.r1)
+    {
+      _didR1Change = true;
+      _isPS3_R1_Pressed = ( Ps3.data.analog.button.r1 > 0 );
+    }
+
+    if(Ps3.event.analog_changed.button.circle)
+    {
+      if ( Ps3.data.analog.button.circle > 0 )
+      {
+        _didCircleChange = true;
+      }
+    }
+
+    if(Ps3.event.analog_changed.button.triangle)
+    {
+      if ( Ps3.data.analog.button.triangle > 0 )
+      {
+        _didTriangleChange = true;
+      }
+    }
+
+    if(Ps3.event.analog_changed.button.cross)
+    {
+      if ( Ps3.data.analog.button.cross > 0 )
+      {
+        _didCrossChange = true;
+      }
+    }
+
+    if(Ps3.event.analog_changed.button.square)
+    {
+      if ( Ps3.data.analog.button.square > 0 )
+      {
+        _didSquareChange = true;
+      }
+    }
+
+//     //Notes:
+//     //
+//     //PS3 controller:
+//     //Stick:
+//     //a negative value indicates the joystick is being pushed forward
+//     //a positive value indicates the joystick is being pulled towards the user/aft
+//     //a zero value indicates the joystick is in the neutral position
+//     //
+//     //Buttons: Ps3.event.analog_changed.button.*
+//     //square, cross, circle, triangle, l1, l2, r1, r2, up, down, left, right
+//     //  All of these fields/buttons are declared as uint8_t, which means that they can have a value between 0 and 255. If we look into this file, we can check that these fields will have the difference between the previous analog value of the button and the current one. This means that the value will be greater than 0 if the analog value of the button changes.
+//     //  It’s important to take in consideration that this value will be equal to zero while the button is pressed but in the same position, since the previous position will be equal to the current one.
+//     //  For example, if we click the R2 button to the maximum and hold it pressed, the corresponding field will be zero. It will only be different from zero when the button is going from not pressed to pressed, and then from pressed to not pressed (or between intermediate states).
+//     //  Note also that even if we give a single click from not pressed to fully pressed, multiple intermediate positions may be detected. Consequently, multiple events will be triggered.
+//     //  so
+//     //  this renders the event that has changed: Ps3.event.analog_changed.button.circle
+//     //  and this renders the value indicating the change: Ps3.data.analog.button.circle
+//     //    we simply access the button to obtain the analog value. 0 corresponds to not pressed and 255 corresponds to fully pressed.
+//     //    IE: 
+//     //      if(Ps3.event.analog_changed.button.square)
+//     //      {
+//     //        Serial.print("Square New value: ");
+//     //        Serial.println(Ps3.data.analog.button.square);
+//     //      }
+//     //
+//     //Motors:
+//     //the motors run in tandem...1 & 2 work the left side, 3 & 4 the right
+//     //1 & 3 are forwards
+//     //2 & 4 are reverse
+//     //a PWM value of: 0 = stop, 255 = full speed, 127 is half speed
+
+
+
+//     //the following code is functional for left to right joystick movements (the X axis), but does not take into account what the Y axis is doing
+//     //if ( leftX < -5 ) //the left joystick is being pulled to the left
+//     //{
+//     //  //turn on forward (left side)
+//     //  ledcWrite(1, 0);
+//     //  //turn on reverse (left side)
+//     //  ledcWrite(2, (abs(leftX) + 127));
+//     //}
+//     //else if (leftX > 5) //the left joystick is being pushed to the right
+//     //{
+//     //  //turn on forward (left side)
+//     //  ledcWrite(1, (abs(leftX) + 127));
+//     //  //turn off reverse (left side)
+//     //  ledcWrite(2, 0);
+//     //}
+//     //else
+//     //{
+//     //  //turn off forward (left side)
+//     //  ledcWrite(1, 0);
+//     //  //turn off reverse (left side)
+//     //  ledcWrite(2, 0);
+//     //}
+// 	  //
+//     //if ( rightX < -5 ) //the right joystick is being pushed to the left
+//     //{
+//     //  //turn on forward (right side)
+//     //  ledcWrite(3, (abs(rightX) + 127));
+//     //  //turn off reverse (right side)
+//     //  ledcWrite(4, 0);
+//     //}
+//     //else if (rightX > 5) //the right joystick is being pulled to the right
+//     //{
+//     //  //turn on forward (right side)
+//     //  ledcWrite(3, 0);
+//     //  //turn on reverse (right side)
+//     //  ledcWrite(4, (abs(rightX) + 127));
+//     //}
+//     //else
+//     //{
+//     //  //turn off forward (right side)
+//     //  ledcWrite(3, 0);
+//     //  //turn off reverse (right side)
+//     //  ledcWrite(4, 0);
+//     //}
+
+
+    if ( _leftY < -5 ) //the joystick is being pushed forward
+    {
+      if ( !_isFrontObstacleDetected )
+      {
+        //turn on forward (left side)
+        ledcWrite(1, (abs(_leftY) + 127));
+        //turn off reverse (left side)
+        ledcWrite(2, 0);
+        _isMovingForward = true;
+        _isMovingBackward = false;
+      }
+    }
+    else if ( _leftY > 5 && !_isRearObstacleDetected ) //the joystick is being pulled aft
+    {
+      //turn on forward (left side)
+      ledcWrite(1, 0);
+      //turn on reverse (left side)
+      ledcWrite(2, (abs(_leftY) + 127));
+      _isMovingForward = false;
+      _isMovingBackward = true;
+    }
+    else
+    {
+      //turn off forward (left side)
+      ledcWrite(1, 0);
+      //turn off reverse (left side)
+      ledcWrite(2, 0);
+      _isMovingForward = false;
+      _isMovingBackward = false;
+    }
+	
+    if ( _rightY < -5 ) //the joystick is being pushed forward
+    {
+      if ( !_isFrontObstacleDetected )
+      {
+        //turn on forward (right side)
+        ledcWrite(3, (abs(_rightY) + 127));
+        //turn off reverse (right side)
+        ledcWrite(4, 0);
+        _isMovingForward = true;
+        _isMovingBackward = false;
+      }
+    }
+    else if (_rightY > 5 && !_isRearObstacleDetected)  // the joystick is being pulled aft
+    {
+      //turn on forward (right side)
+      ledcWrite(3, 0);
+      //turn on reverse (right side)
+      ledcWrite(4, (abs(_rightY) + 127));
+      _isMovingForward = false;
+      _isMovingBackward = true;
+    }
+    else
+    {
+      //turn off forward (right side)
+      ledcWrite(3, 0);
+      //turn off reverse (right side)
+      ledcWrite(4, 0);
+      _isMovingForward = false;
+      _isMovingBackward = false;
+    }
+
+
+    ////all four wheels oppossing direction...basically it will spin in a circle...donuts!!!
+    //if ( _rightY < -5 )
+    //{
+    //  //forward
+    //  ledcWrite(3, (abs(_rightY) + 127));
+    //}
+    //else if (_rightY > 5)
+    //{
+    //  ledcWrite(3, 0);
+    //}
+}
+
+void OnConnect()
+{
+    digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
+    _builtInLEDs.clear();
+    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.show();
+    delay(200);
+    _builtInLEDs.clear();
+    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.show();
+    delay(200);
+    _builtInLEDs.clear();
+    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.show();
+    delay(2000);
+    _builtInLEDs.clear();
+    _builtInLEDs.show();
+    digitalWrite(PIN_BT_CONNECTED_LED, LOW);
 }
 
