@@ -217,9 +217,9 @@ void loop()
   ToggleLightbar(255, 255, 255, FRONT, false);
   delay(250);
   //rear
-  ToggleLightbar(255, 255, 255, REAR, true);
+  ToggleLightbar(0, 0, 255, REAR, true);
     delay(250);
-  ToggleLightbar(255, 255, 255, REAR, false);
+  ToggleLightbar(0, 0, 255, REAR, false);
     delay(250);
 
   //GROUND
@@ -727,7 +727,6 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
 
 void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool on)
 {
-
   Adafruit_NeoPixel *bar;
   int numberOfPixels = 0;
   // turn the desired lightbar on or off
