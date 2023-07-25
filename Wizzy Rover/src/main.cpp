@@ -156,6 +156,7 @@ VL53L0X_RangingMeasurementData_t _rear_LOX_Measure;
 
 void BlinkDebugLED(int BlinkXTimes);
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper = false);
+void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB);
 void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B);
 void FlashBuiltInLEDs();
 bool IsRunningInDemoMode();
@@ -635,6 +636,53 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
     }
 
     delete [] colors;
+}
+
+void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB)
+{
+  // turn the desired lightbar on
+   switch (LB)
+    {
+      case FRONT:
+        {
+          bar = &_frontLightbar;
+          numberOfPixels = NUM_PIXELS_ON_FLB;
+          break;
+        }
+      case REAR:
+        {
+          bar = &_rearLightbar;
+          numberOfPixels = NUM_PIXELS_ON_RLB;
+          break;
+        }
+      case GROUND_EFFECT:
+        {
+          bar = &_groundEffectLB;
+          numberOfPixels = NUM_PIXELS_ON_GELB;
+          break;
+        }
+      case FRONT_AND_REAR:
+        {
+          bar = &_frontLightbar;
+          numberOfPixels = (NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB);
+          break;
+        }
+      default:
+        {
+          bar = &_frontLightbar;
+          numberOfPixels = 6;
+          break;
+        }
+    }
+
+  bar->clear();
+  for(int i=0; i < numberOfPixels; i++)
+  {
+    bar->SetPixelColor(i, bar->Color(R, G, B));
+  }
+
+  bar->show();
+
 }
 
 void FlashBuiltInLEDs()
