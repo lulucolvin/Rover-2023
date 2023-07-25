@@ -75,7 +75,7 @@
 #define PIN_DEMO_MODE         34    // when set high, causes the code to run in BW demo mode
 #define PIN_PHOTORESISTOR     35    // Reads the photoresistor analog value
 
-enum Lightbar { FRONT, REAR, GROUND_EFFECT, FRONT_AND_REAR };
+enum Lightbar { FRONT, REAR, GROUND_EFFECT, FRONT_AND_REAR, BUILT_IN };
 enum Color { UNKNOWN, RED, WHITE, BLUE, GREEN };
 
 Color _isRedWhiteOrBlue = RED;
@@ -160,78 +160,25 @@ void ToggleLightbar(Lightbar LB, bool TurnOn = true, uint8_t R = 255, uint8_t G 
 void ToggleLBDueToLight();
 void TurnBuiltInsOn();
 void TurnBuiltInsOff();
-void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B);
-void FlashBuiltInLEDs();
+void FlashBuiltInLEDs(int numFlashes = 1, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
 bool IsRunningInDemoMode();
 void SetupLidarSensors();
 void ReadLidarSensors();
 void OnNotify();
 void OnConnect();
+void SetupLightbars();
+void SetupMotors();
+void SetupPins();
 
 void setup()
 {
-  pinMode(PIN_DEMO_MODE, INPUT_PULLDOWN); //pin 34
+  SetupPins();
+  SetupLightbars();
+  SetupMotors();
 
-  pinMode(PIN_DEBUG_LED, OUTPUT);         //pin 32
-  pinMode(PIN_BT_CONNECTED_LED, OUTPUT);  //pin 26
-
-  //pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(PIN_PHOTORESISTOR, INPUT);      //pin 35
-
-  pinMode(PIN_XSHUT_FRONT_LOX, OUTPUT);   //pin 33
-  pinMode(PIN_XSHUT_REAR_LOX, OUTPUT);    //pin 25
-
-  pinMode(PIN_PIXELS_GELB, OUTPUT);       //pin 23
-  digitalWrite(PIN_PIXELS_GELB, LOW);
-
-  //this is the switch, high allows the front LB to turn on
-  pinMode(PIN_FLB_SWITCH, OUTPUT);        //pin 14
-
-  pinMode(PIN_PIXELS_FLB, OUTPUT);        //pin 27
-  digitalWrite(PIN_PIXELS_FLB, LOW);
-  //pinMode(PIN_PIXELS_RLB, OUTPUT);        //pin 15
-  //digitalWrite(PIN_PIXELS_RLB, LOW);
-
-  digitalWrite(PIN_DEBUG_LED, HIGH);
-  digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-  delay(500);
-
-  digitalWrite(PIN_PIXELS_GELB, LOW);
-
-  _isRedWhiteOrBlue = RED;
-  _nextColor = WHITE;
-
-  BlinkDebugLED(1);
-
-  _builtInLEDs.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _builtInLEDs.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
-  delay(250);
-
-  _frontLightbar.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _frontLightbar.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
-  delay(250);
-
-  _groundEffectLB.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _groundEffectLB.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
-  delay(250);
-
+  // for debug
   Chaser(WHITE, FRONT_AND_REAR);
   Chaser(WHITE, GROUND_EFFECT);
-  
-  // Setup the motors
-  ledcSetup(1, 30000, 8); //we set up PWM channel 1, frequency of 30,000 Hz, 8 bit resolution
-  ledcAttachPin(_inOne,1); //we're going to attach inOne to our new PWM channel
-  ledcSetup(2, 30000, 8); //we'll set up the rest of our PWM channels, just like before.
-  ledcAttachPin(_inTwo,2); //this time we'll need to set up 8 PWM channels!
-  ledcSetup(3, 30000, 8);
-  ledcAttachPin(_inThree,3);
-  ledcSetup(4, 30000, 8);
-  ledcAttachPin(_inFour,4);
-
-  delay(250);
-
-  _lbBrightness = 128;
-  _frontLightbar.setBrightness(_lbBrightness); 
 
   Ps3.attach(OnNotify);
   Ps3.attachOnConnect(OnConnect);
@@ -252,34 +199,11 @@ void setup()
   delay(1000);
   BlinkDebugLED(3);
 
-  //digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-  //digitalWrite(PIN_BT_CONNECTED_LED, LOW);
-
   _loopsBetweenBlinks = (LOOPS_BETWEEN_BLINKS + 1);
 }
 
 void loop()
 {
-  // //front
-  // ToggleLightbar(FRONT, true);
-  // delay(250);
-  // ToggleLightbar(FRONT, false);
-  // delay(250);
-  // //rear
-  // ToggleLightbar(REAR, true);
-  //   delay(250);
-  // ToggleLightbar(REAR, false);
-  //   delay(250);
-
-  // //GROUND
-  // ToggleLightbar(GROUND_EFFECT, true);
-  //   delay(250);
-  // ToggleLightbar(GROUND_EFFECT, false);
-  //   delay(250);
-  //Chaser(WHITE, FRONT_AND_REAR);
-  //Chaser(WHITE, GROUND_EFFECT);
-  
-
   if ( _loopsBetweenBlinks > LOOPS_BETWEEN_BLINKS )
   {
     _loopsBetweenBlinks = 0;
@@ -326,7 +250,14 @@ void loop()
       delay(100);
     }
 
-    //FlashBuiltInLEDs();
+    if( Ps3.isConnected())
+    {
+      FlashBuiltInLEDs(3, 0, 0, 255);
+    }
+    else
+    { 
+      FlashBuiltInLEDs(3, 255, 0, 0);
+    }
     Ps3.begin(_ps3MacAddr);
     delay(2000);
   }
@@ -334,7 +265,7 @@ void loop()
   {
     digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
 
-    //FlashBuiltInLEDsForDebug(255, 255, 255);
+    //FlashBuiltInLEDs(1, 255, 255, 255);
     delay(125);
     _builtInLEDs.clear();
     _builtInLEDs.show();
@@ -421,15 +352,15 @@ void loop()
 
       if ( _useLiDar ) 
       {
-        FlashBuiltInLEDsForDebug(255, 255, 255);
+        FlashBuiltInLEDs();
         delay(200);
-        FlashBuiltInLEDsForDebug(0, 0, 0);
+        FlashBuiltInLEDs(1, 0, 0, 0);
       }
       else
       {
-        FlashBuiltInLEDsForDebug(255, 0, 0);
+        FlashBuiltInLEDs(1, 255, 0, 0);
         delay(200);
-        FlashBuiltInLEDsForDebug(0, 0, 0);
+        FlashBuiltInLEDs(1, 0, 0, 0);
       }
       delay(125);
       _builtInLEDs.clear();
@@ -467,6 +398,69 @@ void ToggleLBDueToLight()
       }
     }
 }
+
+#pragma region SetUp Helper Methods
+void SetupPins()
+{
+  pinMode(PIN_DEMO_MODE, INPUT_PULLDOWN); //pin 34
+
+  pinMode(PIN_DEBUG_LED, OUTPUT);         //pin 32
+  pinMode(PIN_BT_CONNECTED_LED, OUTPUT);  //pin 26
+
+  //pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(PIN_PHOTORESISTOR, INPUT);      //pin 35
+
+  digitalWrite(PIN_DEBUG_LED, HIGH);
+  digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
+  delay(500);
+  
+  pinMode(PIN_PIXELS_GELB, OUTPUT);       //pin 23
+  digitalWrite(PIN_PIXELS_GELB, LOW);
+
+  //this is the switch, high allows the front LB to turn on
+  pinMode(PIN_FLB_SWITCH, OUTPUT);        //pin 14
+
+  pinMode(PIN_PIXELS_FLB, OUTPUT);        //pin 27
+  digitalWrite(PIN_PIXELS_FLB, LOW);
+}
+void SetupMotors()
+{
+  // Setup the motors
+  ledcSetup(1, 30000, 8); //we set up PWM channel 1, frequency of 30,000 Hz, 8 bit resolution
+  ledcAttachPin(_inOne,1); //we're going to attach inOne to our new PWM channel
+  ledcSetup(2, 30000, 8); //we'll set up the rest of our PWM channels, just like before.
+  ledcAttachPin(_inTwo,2); //this time we'll need to set up 8 PWM channels!
+  ledcSetup(3, 30000, 8);
+  ledcAttachPin(_inThree,3);
+  ledcSetup(4, 30000, 8);
+  ledcAttachPin(_inFour,4);
+
+  delay(250);
+}
+void SetupLightbars()
+{
+  // set up lightbars and built in LEDs
+  _builtInLEDs.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  _builtInLEDs.setBrightness(MAX_LB_BRIGHTNESS); 
+  delay(250);
+
+  _frontLightbar.begin();
+  _frontLightbar.setBrightness(MAX_LB_BRIGHTNESS);
+  delay(250);
+
+  _groundEffectLB.begin();
+  _groundEffectLB.setBrightness(MAX_LB_BRIGHTNESS);
+  delay(250);
+
+  // set colors for RWB Chaser sequence
+  _isRedWhiteOrBlue = RED;
+  _nextColor = WHITE;
+
+  // set brightness lower when we want to conserve battery
+  _lbBrightness = 128;
+  _frontLightbar.setBrightness(_lbBrightness); 
+}
+#pragma endregion Setup Helper Methods
 
 void BlinkDebugLED(int BlinkXTimes)
 {
@@ -584,6 +578,12 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
           numberOfPixels = (NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB);
           break;
         }
+      case BUILT_IN:
+      {
+        bar = &_builtInLEDs;
+        numberOfPixels = NUMPIXELS;
+        break;
+      }
       default:
         {
           bar = &_frontLightbar;
@@ -824,73 +824,10 @@ void TurnBuiltInsOff()
   _areBuiltInsOn = false;
 }  
 
-void FlashBuiltInLEDs()
+void FlashBuiltInLEDs(int numFlashes, uint8_t R, uint8_t G, uint8_t B)
 {
-  if ( Ps3.isConnected() )
+  for(int i = 0; i < numFlashes; i++)
   {
-    digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(500);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
-    digitalWrite(PIN_BT_CONNECTED_LED, LOW);
-  }
-  else
-  {
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.show();
-    delay(500);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
-  }
-}
-
-void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B)
-{
-  
     _builtInLEDs.clear();
     _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
     _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
@@ -898,22 +835,7 @@ void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B)
     _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
     _builtInLEDs.show();
     delay(200);
-    // _builtInLEDs.clear();
-    // _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.show();
-    // delay(200);
-    // _builtInLEDs.clear();
-    // _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.show();
-    // delay(200);
-    // _builtInLEDs.clear();
-    // _builtInLEDs.show();
+  }
 }
 
 bool IsRunningInDemoMode()
@@ -934,9 +856,12 @@ bool IsRunningInDemoMode()
  */
 void SetupLidarSensors()
 {
+  pinMode(PIN_XSHUT_FRONT_LOX, OUTPUT);   //pin 33
+  pinMode(PIN_XSHUT_REAR_LOX, OUTPUT);    //pin 25
+
   if ( !_useLiDar ) return;
 
-  //FlashBuiltInLEDsForDebug(255, 255, 255); //white
+  //FlashBuiltInLEDs(); //white
 
   // reset both front & rear lidar
   if ( !_isFrontLidarOn ) digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
@@ -951,14 +876,14 @@ void SetupLidarSensors()
   // keep the front on, turn off the rear
   if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, LOW);
 
-  //FlashBuiltInLEDsForDebug(255, 0, 0); //red
+  //FlashBuiltInLEDs(1, 255, 0, 0); //red
 
   // initing front
   if ( !_isFrontLidarOn )
   {
     if(!_frontLox.begin(FRONT_FACING_LOX_I2C_ADDR)) 
     {
-      FlashBuiltInLEDsForDebug(255, 255, 0); //yellow
+      FlashBuiltInLEDs(1, 255, 255, 0); //yellow
       Serial.println(F("Failed to boot first VL53L0X"));
       _isFrontLidarOn = false;
     }
@@ -969,7 +894,7 @@ void SetupLidarSensors()
     delay(50);
     }
 
-  //FlashBuiltInLEDsForDebug(0, 0, 255); //blue
+  //FlashBuiltInLEDs(1, 0, 0, 255); //blue
 
   // activating rear
   //digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
@@ -981,7 +906,7 @@ void SetupLidarSensors()
   {
     if(!_rearLox.begin(REAR_FACING_LOX_I2C_ADDR)) 
     {
-      FlashBuiltInLEDsForDebug(0, 255, 0); //green
+      FlashBuiltInLEDs(1, 0, 255, 0); //green
       Serial.println(F("Failed to boot rear VL53L0X"));
       _isRearLidarOn = false;
     }

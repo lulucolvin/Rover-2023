@@ -1,31 +1,3 @@
-/*
-  ACBR RGB One
-
-  Controls the rover used for the HSU Foundation & Be The Magic Foundation Summer Class 2021 (Wizzy Rover).
-
-  Hx: 
-  05.24.21 DJP - Started coding
-  05.25.21 DJP - Added headlight functionality
-  05.29.21 DJP - Added obstacle avoidance LiDar sensors
-  06.01.21 DJP - Added topside leds for better visibility of rover status in sunlight
-  07.07.21 DJP - Changed "star" button on controller to show a red & blue back & forth fade
-  07.07.21 DJP - Tweaked lightbar light sensitivity due to new location of the photoresistor
-  07.07.21 DJP - Tweaked LiDar sensitivity due to new location of the LiDar sensors
-  07.29.21 DJP - Incorporated Doug & Sarah's in class changes
-  08.03.21 DJP - Moved code from the OnNotify() to the Loop() to resolve BT response issues between the PS3 and the ESP32
-  08.04.21 DJP - Changed ReadLiDarSensors() to not clear the ground effect leds between reads when ground effect is on
-  07.22.22 DJP - Changed SetupLiDarSensort() to not entire a never ending while loop when a LiDar sensor fails to initialize
-  07.23.22 DJP - Added toggle option to turn on/off LiDar via PS3 L1 & R1 combination
-  08.03.22 DJP - Added ground effect lighting
-  08.15.22 DJP - Added Bit-Wizards demo mode, by setting pin 34 high the ground effect lighting and FLB strobe blue & yellow
-                    keeping pin 34 low keeps the rover in normal mode (non-Demo mode)...for testing, I used a jumper between pin 34
-                    and pin 0 to turn on demo mode, leaving 34 empty or using a pin already in low state (IE pin 2) will take it out 
-                    of demo mode...this can be done on the fly
-  07.20.23 DJP - Changed debug led functionality as follows:
-                  1) The blue led on the hat of the Wizzy controller board will blink 3 times if not BT connection and will otherwise
-                     stay on (blue)
-                  2) The white eyes on the face of the Wizzy controller board are the debug leds and will blink accordingly depending 
-                     on the issue detected
-  07.20.23 DJP - Changed front & rear lightbars to function as one lightbar
-  07.20.23 DJP - Added ground effect lightbars as part of the standard rover startup
-*/
+07.25.2023 Found that Windows 11 may need a separately installed driver to compile code onto the esp32 controller
+            the driver can be downloaded here: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers?tab=downloads
+            We used the CP210x Universal Windows Driver v. 11.3.0
