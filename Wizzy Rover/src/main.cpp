@@ -255,8 +255,8 @@ void loop()
 {
     loopGE();
 
-    BlinkDebugLED(10);
-    delay(500);
+    // BlinkDebugLED(10);
+    // delay(500);
 }
 
 void BlinkDebugLED(int BlinkXTimes)
@@ -326,8 +326,6 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
         }
     }
 
-    //BlinkDebugLED(2);
-
     uint8_t *colors{new uint8_t[numberOfPixels]};
 
     //colors = new uint8_t[numberOfPixels];
@@ -359,19 +357,19 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
             case RED:
             {
               bar->setPixelColor(pixel, bar->Color(pixelColor, G, B));
-			        bar->show();
+			        // bar->show();
               break;
             }
             case WHITE:
             {
               bar->setPixelColor(pixel, bar->Color(pixelColor, pixelColor, pixelColor));
-			        bar->show();
+			        // bar->show();
               break;
             }
             default:
             {
               bar->setPixelColor(pixel, bar->Color(R, G, pixelColor));
- 			        bar->show();
+ 			        // bar->show();
               break;
             }
           }
@@ -402,100 +400,123 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
       delay(100);
     }
 
+    pixel = 0;
+    pixelColor = 0;
+
     //go from right to left
-    for (int j = numberOfPixels; j >= 0; j--)
+    for (int j = (numberOfPixels-1); j >= 0; j--)
     {
-        for (int p = 0; p < numberOfPixels; p++)
+      for (int p = 0; p < numberOfPixels; p++)
+      {
+        pixel = p;
+        
+        if ( RandomTrailTaper )
         {
-          pixel = p;
-          
-          if ( RandomTrailTaper )
+          pixel = random(0, p);
+        }
+        
+        pixelColor = colors[pixel];
+        if ( pixelColor > 0 )
+        {
+          pixelColor = (pixelColor/2);
+          colors[pixel] = pixelColor;
+          switch (_isRedWhiteOrBlue)
           {
-            pixel = random(0, p);
-          }
-          
-          pixelColor = colors[pixel];
-          if ( pixelColor > 0 )
-          {
-            pixelColor = (pixelColor/2);
-            colors[pixel] = pixelColor;
-            switch (_isRedWhiteOrBlue)
+            case RED:
             {
-              case RED:
-              {
-                bar->setPixelColor(pixel, bar->Color(pixelColor, G, B));
-				        bar->show();
-                break;
-              }
-              case WHITE:
-              {
-                bar->setPixelColor(pixel, bar->Color(pixelColor, pixelColor, pixelColor));
-				        bar->show();
-                break;
-              }
-              default:
-              {
-                bar->setPixelColor(pixel, bar->Color(R, G, pixelColor));
-				        bar->show();
-                break;
-              }
+              bar->setPixelColor(pixel, bar->Color(pixelColor, G, B));
+              // bar->show();
+              break;
+            }
+            case WHITE:
+            {
+              bar->setPixelColor(pixel, bar->Color(pixelColor, pixelColor, pixelColor));
+              // bar->show();
+              break;
+            }
+            default:
+            {
+              bar->setPixelColor(pixel, bar->Color(R, G, pixelColor));
+              // bar->show();
+              break;
             }
           }
         }
+      }
 
 	    //set the leading pixel/led
       bar->setPixelColor(j, bar->Color(R, G, B));
       bar->show();
 
+      switch (_isRedWhiteOrBlue)
+      {
+        case RED:
+        {
+          colors[j] = R;
+          break;
+        }
+        case WHITE:
+        {
+          colors[j] = G;
+          break;
+        }
+        default:
+        {
+          colors[j] = B;
+          break;
+        }
+      }
+
       delay(100);
     }
 
     bool areTherePixelsLeftToBeFaded = false;
+    pixel = 0;
+    pixelColor = 0;
 
     //fade out the trailing tail
     for (int j = 0; j < numberOfPixels; j++)
     {
-        for (int p = 0; p < numberOfPixels; p++)
+      for (int p = 0; p < numberOfPixels; p++)
+      {
+        pixel = p;
+        
+        if ( RandomTrailTaper )
         {
-          pixel = p;
-          
-          if ( RandomTrailTaper )
+          pixel = random(0, p);
+        }
+        
+        pixelColor = colors[pixel];
+        if ( pixelColor > 0 )
+        {
+          areTherePixelsLeftToBeFaded = true;
+          pixelColor = (pixelColor/2);
+          colors[pixel] = pixelColor;
+          switch (_isRedWhiteOrBlue)
           {
-            pixel = random(0, p);
-          }
-          
-          pixelColor = colors[pixel];
-          if ( pixelColor > 0 )
-          {
-            areTherePixelsLeftToBeFaded = true;
-            pixelColor = (pixelColor/2);
-            colors[pixel] = pixelColor;
-            switch (_isRedWhiteOrBlue)
+            case RED:
             {
-              case RED:
-              {
-                bar->setPixelColor(pixel, bar->Color(pixelColor, G, B));
-				        bar->show();
-                break;
-              }
-              case WHITE:
-              {
-                bar->setPixelColor(pixel, bar->Color(pixelColor, pixelColor, pixelColor));
-				        bar->show();
-                break;
-              }
-              default:
-              {
-                bar->setPixelColor(pixel, bar->Color(R, G, pixelColor));
-				        bar->show();
-                break;
-              }
+              bar->setPixelColor(pixel, bar->Color(pixelColor, G, B));
+              // bar->show();
+              break;
+            }
+            case WHITE:
+            {
+              bar->setPixelColor(pixel, bar->Color(pixelColor, pixelColor, pixelColor));
+              // bar->show();
+              break;
+            }
+            default:
+            {
+              bar->setPixelColor(pixel, bar->Color(R, G, pixelColor));
+              // bar->show();
+              break;
             }
           }
         }
+      }
 
 	    //set the leading pixel/led
-      bar->setPixelColor(j, bar->Color(R, G, B));
       bar->show();
 
       delay(100);
