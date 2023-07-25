@@ -76,7 +76,7 @@
 #define PIN_PHOTORESISTOR     35    // Reads the photoresistor analog value
 
 enum Lightbar { FRONT, REAR, GROUND_EFFECT, FRONT_AND_REAR };
-enum Color { UNKNOWN, RED, WHITE, BLUE };
+enum Color { UNKNOWN, RED, WHITE, BLUE, GREEN };
 
 Color _isRedWhiteOrBlue = RED;
 Color _nextColor = UNKNOWN;
@@ -428,6 +428,7 @@ void BlinkDebugLED(int BlinkXTimes)
 
 void Chaser(Color color, Lightbar LB)
 {
+  //default color is WHITE
   uint8_t R = 255;
   uint8_t G = 255;
   uint8_t B = 255;
@@ -437,6 +438,12 @@ void Chaser(Color color, Lightbar LB)
     case RED:
     {
       G = 0;
+      B = 0;
+      break;
+    }
+    case GREEN:
+    {
+      R = 0;
       B = 0;
       break;
     }
