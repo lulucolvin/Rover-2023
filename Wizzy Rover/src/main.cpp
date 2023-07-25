@@ -308,13 +308,15 @@ void loop()
         uint8_t _Red = random(1, 256);
         uint8_t _Green = random(1, 256);
         uint8_t _Blue = random(1, 256);
-        LightTheRearBar(_Red, _Green, _Blue);
+        ToggleLightbar(_Red, _Green, _Blue, REAR);
+        //LightTheRearBar(_Red, _Green, _Blue);
       }
       else
       {
         _isRearLBOn = false;
         _rearLightbar.clear();
-        LightTheRearBar(0, 0, 0);
+        ToggleLightbar(0, 0, 0, REAR);
+        //LightTheRearBar(0, 0, 0);
       }
 
       _rearLightbar.show();
@@ -327,11 +329,13 @@ void loop()
       {
         _showGroundEffect = !_showGroundEffect;
 
-        if ( _showGroundEffect ) ToggleGroundEffect();
+        if ( _showGroundEffect ) ToggleLightbar(255,255,255, GROUND_EFFECT);
+        //ToggleGroundEffect();
       }
       else
       {
-        if ( _showGroundEffect ) ToggleGroundEffect();
+        if ( _showGroundEffect ) ToggleLightbar(255,255,255, GROUND_EFFECT);
+        //ToggleGroundEffect();
 
         if ( _areBuiltInsOn ) TurnBuiltInsOff(); 
         else                  TurnBuiltInsOn();
@@ -342,7 +346,8 @@ void loop()
     }
     else
     {
-      if ( _showGroundEffect ) ToggleGroundEffect(); 
+      if ( _showGroundEffect ) ToggleLightbar(255,255,255, GROUND_EFFECT);
+      //ToggleGroundEffect(); 
     }
 
     if ( _didL1Change || _didR1Change )
@@ -367,7 +372,8 @@ void loop()
     }
   }
 
-  TurnOnFrontLightbar();
+  //TurnOnFrontLightbar();
+  ToggleLightbar(255, 255, 255, FRONT);
 }
 
 void BlinkDebugLED(int BlinkXTimes)
