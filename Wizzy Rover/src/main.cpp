@@ -184,16 +184,6 @@ void setup()
   Ps3.attachOnConnect(OnConnect);
   Ps3.begin(_ps3MacAddr);
 
-#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__) || defined(__AVR_ATmega1280__) 
-  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
-#endif
-#if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__) 
-  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
-#endif
-#if defined(__ESP32__)
-  _lightCal = 1600;
-#endif
-
   SetupLidarSensors();
 
   delay(1000);
@@ -434,6 +424,17 @@ void SetupLightbars()
   // set brightness lower when we want to conserve battery
   _lbBrightness = 128;
   _frontLightbar.setBrightness(_lbBrightness); 
+
+  //light sensor calibration
+  #if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__) || defined(__AVR_ATmega1280__) 
+  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
+#endif
+#if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__) 
+  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
+#endif
+#if defined(__ESP32__)
+  _lightCal = 1600;
+#endif
 }
 #pragma endregion Setup Helper Methods
 
@@ -1233,29 +1234,7 @@ void OnNotify()
 void OnConnect()
 {
     digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(2000);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
+    FlashBuiltInLEDs(3, 0, 0, 255);
     digitalWrite(PIN_BT_CONNECTED_LED, LOW);
 }
 
