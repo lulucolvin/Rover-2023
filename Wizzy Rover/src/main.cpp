@@ -159,7 +159,6 @@ void Chaser(Color color, Lightbar LB);
 void ToggleLightbar(Lightbar LB, bool on = true, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
 void TurnBuiltInsOn();
 void TurnBuiltInsOff();
-void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B);
 void FlashBuiltInLEDs(int numFlashes = 1, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
 bool IsRunningInDemoMode();
 void SetupLidarSensors();
@@ -265,7 +264,7 @@ void loop()
   {
     digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
 
-    //FlashBuiltInLEDsForDebug(255, 255, 255);
+    //FlashBuiltInLEDs(1, 255, 255, 255);
     delay(125);
     _builtInLEDs.clear();
     _builtInLEDs.show();
@@ -352,15 +351,15 @@ void loop()
 
       if ( _useLiDar ) 
       {
-        FlashBuiltInLEDsForDebug(255, 255, 255);
+        FlashBuiltInLEDs();
         delay(200);
-        FlashBuiltInLEDsForDebug(0, 0, 0);
+        FlashBuiltInLEDs(1, 0, 0, 0);
       }
       else
       {
-        FlashBuiltInLEDsForDebug(255, 0, 0);
+        FlashBuiltInLEDs(1, 255, 0, 0);
         delay(200);
-        FlashBuiltInLEDsForDebug(0, 0, 0);
+        FlashBuiltInLEDs(1, 0, 0, 0);
       }
       delay(125);
       _builtInLEDs.clear();
@@ -852,34 +851,6 @@ void FlashBuiltInLEDs(int numFlashes, uint8_t R, uint8_t G, uint8_t B)
   }
 }
 
-void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B)
-{
-  
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.show();
-    delay(200);
-    // _builtInLEDs.clear();
-    // _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.show();
-    // delay(200);
-    // _builtInLEDs.clear();
-    // _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.show();
-    // delay(200);
-    // _builtInLEDs.clear();
-    // _builtInLEDs.show();
-}
-
 bool IsRunningInDemoMode()
 {
   //return false;
@@ -903,7 +874,7 @@ void SetupLidarSensors()
 
   if ( !_useLiDar ) return;
 
-  //FlashBuiltInLEDsForDebug(255, 255, 255); //white
+  //FlashBuiltInLEDs(); //white
 
   // reset both front & rear lidar
   if ( !_isFrontLidarOn ) digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
@@ -918,14 +889,14 @@ void SetupLidarSensors()
   // keep the front on, turn off the rear
   if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, LOW);
 
-  //FlashBuiltInLEDsForDebug(255, 0, 0); //red
+  //FlashBuiltInLEDs(1, 255, 0, 0); //red
 
   // initing front
   if ( !_isFrontLidarOn )
   {
     if(!_frontLox.begin(FRONT_FACING_LOX_I2C_ADDR)) 
     {
-      FlashBuiltInLEDsForDebug(255, 255, 0); //yellow
+      FlashBuiltInLEDs(1, 255, 255, 0); //yellow
       Serial.println(F("Failed to boot first VL53L0X"));
       _isFrontLidarOn = false;
     }
@@ -936,7 +907,7 @@ void SetupLidarSensors()
     delay(50);
     }
 
-  //FlashBuiltInLEDsForDebug(0, 0, 255); //blue
+  //FlashBuiltInLEDs(1, 0, 0, 255); //blue
 
   // activating rear
   //digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
@@ -948,7 +919,7 @@ void SetupLidarSensors()
   {
     if(!_rearLox.begin(REAR_FACING_LOX_I2C_ADDR)) 
     {
-      FlashBuiltInLEDsForDebug(0, 255, 0); //green
+      FlashBuiltInLEDs(1, 0, 255, 0); //green
       Serial.println(F("Failed to boot rear VL53L0X"));
       _isRearLidarOn = false;
     }
