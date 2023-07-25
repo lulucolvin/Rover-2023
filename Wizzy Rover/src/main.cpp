@@ -202,11 +202,62 @@ void setup()
   _nextColor = WHITE;
 
   BlinkDebugLED(1);
-  
+
+  _builtInLEDs.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  _builtInLEDs.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+  delay(250);
+
+  _frontLightbar.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  _frontLightbar.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+  delay(250);
+
+  _rearLightbar.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  _rearLightbar.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+  delay(250);
+
   _groundEffectLB.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
   _groundEffectLB.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+  delay(250);
+
+  // Setup the motors
+  ledcSetup(1, 30000, 8); //we set up PWM channel 1, frequency of 30,000 Hz, 8 bit resolution
+  ledcAttachPin(_inOne,1); //we're going to attach inOne to our new PWM channel
+  ledcSetup(2, 30000, 8); //we'll set up the rest of our PWM channels, just like before.
+  ledcAttachPin(_inTwo,2); //this time we'll need to set up 8 PWM channels!
+  ledcSetup(3, 30000, 8);
+  ledcAttachPin(_inThree,3);
+  ledcSetup(4, 30000, 8);
+  ledcAttachPin(_inFour,4);
 
   delay(250);
+
+    _lbBrightness = 128;
+  _frontLightbar.setBrightness(_lbBrightness); 
+  _rearLightbar.setBrightness(_lbBrightness); 
+
+  Ps3.attach(OnNotify);
+  Ps3.attachOnConnect(OnConnect);
+  Ps3.begin(_ps3MacAddr);
+
+#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__) || defined(__AVR_ATmega1280__) 
+  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
+#endif
+#if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__) 
+  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
+#endif
+#if defined(__ESP32__)
+  _lightCal = 1600;
+#endif
+
+  SetupLidarSensors();
+
+  delay(1000);
+  BlinkDebugLED(3);
+
+  //digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
+  //digitalWrite(PIN_BT_CONNECTED_LED, LOW);
+
+  _loopsBetweenBlinks = (LOOPS_BETWEEN_BLINKS + 1);
 }
 
 void loop()
@@ -744,7 +795,7 @@ void ToggleLightbar(Lightbar LB, bool on, uint8_t R, uint8_t G, uint8_t B)
         {
           // Rear and Front LBs are chained
           bar = &_rearLightbar;
-          firstPixel = 6;
+          firstPixel = NUM_PIXELS_ON_FLB;
           numberOfPixels = NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB;
           break;
         }
@@ -765,6 +816,7 @@ void ToggleLightbar(Lightbar LB, bool on, uint8_t R, uint8_t G, uint8_t B)
         {
           bar = &_frontLightbar;
           numberOfPixels = 6;
+          on ? digitalWrite(PIN_FLB_SWITCH, HIGH) : digitalWrite(PIN_FLB_SWITCH, LOW);
           break;
         }
     }
