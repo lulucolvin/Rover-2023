@@ -192,9 +192,6 @@ void SetUpLightbars()
 
   pinMode(PIN_PIXELS_FLB, OUTPUT);        //pin 27
   digitalWrite(PIN_PIXELS_FLB, LOW);
-  //pinMode(PIN_PIXELS_RLB, OUTPUT);        //pin 15
-  //digitalWrite(PIN_PIXELS_RLB, LOW);
-
 
   // set up lightbars and built in LEDs
   _builtInLEDs.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
