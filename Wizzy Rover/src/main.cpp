@@ -195,15 +195,15 @@ void SetUpLightbars()
 
   // set up lightbars and built in LEDs
   _builtInLEDs.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _builtInLEDs.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+  _builtInLEDs.setBrightness(MAX_LB_BRIGHTNESS); 
   delay(250);
 
-  _frontLightbar.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _frontLightbar.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+  _frontLightbar.begin();
+  _frontLightbar.setBrightness(MAX_LB_BRIGHTNESS);
   delay(250);
 
-  _groundEffectLB.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _groundEffectLB.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+  _groundEffectLB.begin();
+  _groundEffectLB.setBrightness(MAX_LB_BRIGHTNESS);
   delay(250);
 
   // set colors for RWB Chaser sequence
