@@ -166,20 +166,24 @@ void SetupLidarSensors();
 void ReadLidarSensors();
 void OnNotify();
 void OnConnect();
-
-void setup()
+void SetUpLightbars();
+void SetUpMotors();
+void SetUpMotors()
 {
-  pinMode(PIN_DEMO_MODE, INPUT_PULLDOWN); //pin 34
+  // Setup the motors
+  ledcSetup(1, 30000, 8); //we set up PWM channel 1, frequency of 30,000 Hz, 8 bit resolution
+  ledcAttachPin(_inOne,1); //we're going to attach inOne to our new PWM channel
+  ledcSetup(2, 30000, 8); //we'll set up the rest of our PWM channels, just like before.
+  ledcAttachPin(_inTwo,2); //this time we'll need to set up 8 PWM channels!
+  ledcSetup(3, 30000, 8);
+  ledcAttachPin(_inThree,3);
+  ledcSetup(4, 30000, 8);
+  ledcAttachPin(_inFour,4);
 
-  pinMode(PIN_DEBUG_LED, OUTPUT);         //pin 32
-  pinMode(PIN_BT_CONNECTED_LED, OUTPUT);  //pin 26
-
-  //pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(PIN_PHOTORESISTOR, INPUT);      //pin 35
-
-  pinMode(PIN_XSHUT_FRONT_LOX, OUTPUT);   //pin 33
-  pinMode(PIN_XSHUT_REAR_LOX, OUTPUT);    //pin 25
-
+  delay(250);
+}
+void SetUpLightbars()
+{
   pinMode(PIN_PIXELS_GELB, OUTPUT);       //pin 23
   digitalWrite(PIN_PIXELS_GELB, LOW);
 
@@ -191,17 +195,8 @@ void setup()
   //pinMode(PIN_PIXELS_RLB, OUTPUT);        //pin 15
   //digitalWrite(PIN_PIXELS_RLB, LOW);
 
-  digitalWrite(PIN_DEBUG_LED, HIGH);
-  digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-  delay(500);
 
-  digitalWrite(PIN_PIXELS_GELB, LOW);
-
-  _isRedWhiteOrBlue = RED;
-  _nextColor = WHITE;
-
-  BlinkDebugLED(1);
-
+  // set up lightbars and built in LEDs
   _builtInLEDs.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
   _builtInLEDs.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
   delay(250);
@@ -214,23 +209,39 @@ void setup()
   _groundEffectLB.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
   delay(250);
 
-  Chaser(WHITE, FRONT_AND_REAR);
-  Chaser(WHITE, GROUND_EFFECT);
-  
-  // Setup the motors
-  ledcSetup(1, 30000, 8); //we set up PWM channel 1, frequency of 30,000 Hz, 8 bit resolution
-  ledcAttachPin(_inOne,1); //we're going to attach inOne to our new PWM channel
-  ledcSetup(2, 30000, 8); //we'll set up the rest of our PWM channels, just like before.
-  ledcAttachPin(_inTwo,2); //this time we'll need to set up 8 PWM channels!
-  ledcSetup(3, 30000, 8);
-  ledcAttachPin(_inThree,3);
-  ledcSetup(4, 30000, 8);
-  ledcAttachPin(_inFour,4);
+  // set colors for RWB Chaser sequence
+  _isRedWhiteOrBlue = RED;
+  _nextColor = WHITE;
 
-  delay(250);
-
+  // set brightness lower when we want to conserve battery
   _lbBrightness = 128;
   _frontLightbar.setBrightness(_lbBrightness); 
+}
+
+void setup()
+{
+  pinMode(PIN_DEMO_MODE, INPUT_PULLDOWN); //pin 34
+
+  pinMode(PIN_DEBUG_LED, OUTPUT);         //pin 32
+  pinMode(PIN_BT_CONNECTED_LED, OUTPUT);  //pin 26
+
+  //pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(PIN_PHOTORESISTOR, INPUT);      //pin 35
+
+  digitalWrite(PIN_DEBUG_LED, HIGH);
+  digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
+  delay(500);
+
+  digitalWrite(PIN_PIXELS_GELB, LOW);
+
+  BlinkDebugLED(1);
+
+  SetUpLightbars();
+  SetUpMotors();
+
+  // for debug
+  Chaser(WHITE, FRONT_AND_REAR);
+  Chaser(WHITE, GROUND_EFFECT);
 
   Ps3.attach(OnNotify);
   Ps3.attachOnConnect(OnConnect);
@@ -933,6 +944,9 @@ bool IsRunningInDemoMode()
  */
 void SetupLidarSensors()
 {
+  pinMode(PIN_XSHUT_FRONT_LOX, OUTPUT);   //pin 33
+  pinMode(PIN_XSHUT_REAR_LOX, OUTPUT);    //pin 25
+
   if ( !_useLiDar ) return;
 
   //FlashBuiltInLEDsForDebug(255, 255, 255); //white
