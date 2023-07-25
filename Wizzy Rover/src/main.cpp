@@ -299,7 +299,8 @@ void loop()
     }
     else if ( _keepFLBDemoStrobeOn )
     {
-        StrobeLightbar();
+        Chaser(WHITE, FRONT);
+        //StrobeLightbar();
     }
 
     if(_didSquareChange)
@@ -311,6 +312,7 @@ void loop()
         uint8_t red = random(1, 256);
         uint8_t green = random(1, 256);
         uint8_t blue = random(1, 256);
+        //Chaser()
         LightTheRearBar(red, green, blue);
       }
       else
@@ -430,6 +432,25 @@ void Chaser(Color color, Lightbar LB)
 
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
 {  
+#pragma Region Code To Consider
+    _frontLightbar.clear();
+    digitalWrite(PIN_FLB_SWITCH, HIGH);
+    _frontLightbar.show();
+  
+    digitalWrite(PIN_FLB_SWITCH, LOW);
+    delay(1);
+
+    if ( _areHeadlightsOn )
+    {
+      LightTheFrontBar();
+      digitalWrite(PIN_FLB_SWITCH, HIGH);
+      _frontLightbar.show();
+    }
+
+    //BlinkDebugLED(5);
+    _isStrobeOn = false;
+#pragma EndRegion Code To Consider
+
     int numberOfPixels;
     Adafruit_NeoPixel* bar = &_groundEffectLB;
 
