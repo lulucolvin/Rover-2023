@@ -272,8 +272,9 @@ void loop()
     delay(1);
 
     if ( _didCircleChange )
-    {      
-      TurnOnFrontLightbar(true);
+    {
+      //TurnOnFrontLightbar(true);
+      ToggleLightbar(255,255,255,FRONT);
       _didCircleChange = false;
     }
     // //if(Ps3.event.analog_changed.button.circle)
