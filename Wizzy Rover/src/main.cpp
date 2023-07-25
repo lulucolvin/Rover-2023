@@ -156,7 +156,8 @@ VL53L0X_RangingMeasurementData_t _rear_LOX_Measure;
 void BlinkDebugLED(int BlinkXTimes);
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper = false);
 void Chaser(Color color, Lightbar LB);
-void ToggleLightbar(Lightbar LB, bool on = true, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
+void ToggleLightbar(Lightbar LB, bool TurnOn = true, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
+void ToggleLBDueToLight();
 void TurnBuiltInsOn();
 void TurnBuiltInsOff();
 void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B);
@@ -259,24 +260,25 @@ void setup()
 
 void loop()
 {
-  //front
-  ToggleLightbar(FRONT, true);
-  delay(250);
-  ToggleLightbar(FRONT, false);
-  delay(250);
-  //rear
-  ToggleLightbar(REAR, true);
-    delay(250);
-  ToggleLightbar(REAR, false);
-    delay(250);
+  // //front
+  // ToggleLightbar(FRONT, true);
+  // delay(250);
+  // ToggleLightbar(FRONT, false);
+  // delay(250);
+  // //rear
+  // ToggleLightbar(REAR, true);
+  //   delay(250);
+  // ToggleLightbar(REAR, false);
+  //   delay(250);
 
-  //GROUND
-  ToggleLightbar(GROUND_EFFECT, true);
-    delay(250);
-  ToggleLightbar(GROUND_EFFECT, false);
-    delay(250);
-
-
+  // //GROUND
+  // ToggleLightbar(GROUND_EFFECT, true);
+  //   delay(250);
+  // ToggleLightbar(GROUND_EFFECT, false);
+  //   delay(250);
+  //Chaser(WHITE, FRONT_AND_REAR);
+  //Chaser(WHITE, GROUND_EFFECT);
+  
 
   if ( _loopsBetweenBlinks > LOOPS_BETWEEN_BLINKS )
   {
@@ -435,8 +437,35 @@ void loop()
     }
   }
 
-  //TurnOnFrontLightbar();
-  ToggleLightbar(FRONT);
+  ToggleLBDueToLight();
+}
+
+void ToggleLBDueToLight()
+{    
+    //Take a reading using analogRead() on sensor pin and store it in LightVal
+    _lightVal = analogRead(PIN_PHOTORESISTOR);
+
+    //Serial.println(LightVal, DEC);
+    
+    //if LightVal is less than our initial reading (LightCal) minus 50 it is dark and
+    //turn pin HIGH. The (-50) part of the statement sets the sensitivity. The smaller
+    //the number the more sensitive the circuit will be to variances in light.
+    if (_lightVal < _lightCal)
+    {
+      ToggleLightbar(FRONT);
+      _areHeadlightsOn = true;
+    }
+    //else, it is bright, turn pin LOW
+    else
+    {
+      if ( !_areHeadlightsManuallyOn )
+      {
+        ToggleLightbar(FRONT, false);
+        //setting the pin low MUST be called here after the show, setting low prior to the .show will result in low red LEDs shown when the LB should be off
+        digitalWrite(PIN_FLB_SWITCH, LOW);
+        _areHeadlightsOn = false;
+      }
+    }
 }
 
 void BlinkDebugLED(int BlinkXTimes)
@@ -564,13 +593,18 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
         }
     }
 
-    uint8_t *colors{new uint8_t[numberOfPixels]};
+    uint8_t *colorR{new uint8_t[numberOfPixels]};
+    uint8_t *colorG{new uint8_t[numberOfPixels]};
+    uint8_t *colorB{new uint8_t[numberOfPixels]};
 
-    //colors = new uint8_t[numberOfPixels];
-    memset(colors, 0, numberOfPixels);
+    memset(colorR, 0, numberOfPixels);
+    memset(colorG, 0, numberOfPixels);
+    memset(colorB, 0, numberOfPixels);
 
     long pixel = 0;
-    uint8_t pixelColor = 0;
+    uint8_t pixelColorR = 0;
+    uint8_t pixelColorG = 0;
+    uint8_t pixelColorB = 0;
 
     //go from left to right
     for (int j = firstPixel; j < numberOfPixels; j++)
@@ -584,62 +618,37 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
           pixel = random(0, p);
         }
         
-        pixelColor = colors[pixel];
+        pixelColorR = colorR[pixel];
+        pixelColorG = colorG[pixel];
+        pixelColorB = colorB[pixel];
 
-        if ( pixelColor > 0 )
+        if ( pixelColorR > 0 || pixelColorG > 0 || pixelColorB > 0 )
         {
-          pixelColor = (pixelColor/2);
-          colors[pixel] = pixelColor;
-          switch (_isRedWhiteOrBlue)
-          {
-            case RED:
-            {
-              bar->setPixelColor(pixel, bar->Color(pixelColor, G, B));
-			        // bar->show();
-              break;
-            }
-            case WHITE:
-            {
-              bar->setPixelColor(pixel, bar->Color(pixelColor, pixelColor, pixelColor));
-			        // bar->show();
-              break;
-            }
-            default:
-            {
-              bar->setPixelColor(pixel, bar->Color(R, G, pixelColor));
- 			        // bar->show();
-              break;
-            }
-          }
+          pixelColorR = (pixelColorR > 0 ? ( pixelColorR / 2 ) : 0);
+          pixelColorG = (pixelColorG > 0 ? ( pixelColorG / 2 ) : 0);
+          pixelColorB = (pixelColorB > 0 ? ( pixelColorB / 2 ) : 0);
+
+          colorR[pixel] = pixelColorR;
+          colorG[pixel] = pixelColorG;
+          colorB[pixel] = pixelColorB;
+
+          bar->setPixelColor(pixel, bar->Color(pixelColorR, pixelColorG, pixelColorB));
         }
       }
 
 	    //set the leading pixel/led
       bar->setPixelColor(j, bar->Color(R, G, B));
       bar->show();
-      switch (_isRedWhiteOrBlue)
-      {
-        case RED:
-        {
-          colors[j] = R;
-          break;
-        }
-        case WHITE:
-        {
-          colors[j] = G;
-          break;
-        }
-        default:
-        {
-          colors[j] = B;
-          break;
-        }
-      }
+      colorR[j] = R;
+      colorG[j] = G;
+      colorB[j] = B;
       delay(100);
     }
 
     pixel = 0;
-    pixelColor = 0;
+    pixelColorR = 0;
+    pixelColorG = 0;
+    pixelColorB = 0;
 
     //go from right to left
     for (int j = (numberOfPixels-1); j >= firstPixel; j--)
@@ -653,32 +662,20 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
           pixel = random(0, p);
         }
         
-        pixelColor = colors[pixel];
-        if ( pixelColor > 0 )
+        pixelColorR = colorR[pixel];
+        pixelColorG = colorG[pixel];
+        pixelColorB = colorB[pixel];
+        if ( pixelColorR > 0 || pixelColorG > 0 || pixelColorB > 0 )
         {
-          pixelColor = (pixelColor/2);
-          colors[pixel] = pixelColor;
-          switch (_isRedWhiteOrBlue)
-          {
-            case RED:
-            {
-              bar->setPixelColor(pixel, bar->Color(pixelColor, G, B));
-              // bar->show();
-              break;
-            }
-            case WHITE:
-            {
-              bar->setPixelColor(pixel, bar->Color(pixelColor, pixelColor, pixelColor));
-              // bar->show();
-              break;
-            }
-            default:
-            {
-              bar->setPixelColor(pixel, bar->Color(R, G, pixelColor));
-              // bar->show();
-              break;
-            }
-          }
+          pixelColorR = (pixelColorR > 0 ? ( pixelColorR / 2 ) : 0);
+          pixelColorG = (pixelColorG > 0 ? ( pixelColorG / 2 ) : 0);
+          pixelColorB = (pixelColorB > 0 ? ( pixelColorB / 2 ) : 0);
+
+          colorR[pixel] = pixelColorR;
+          colorG[pixel] = pixelColorG;
+          colorB[pixel] = pixelColorB;
+
+          bar->setPixelColor(pixel, bar->Color(pixelColorR, pixelColorG, pixelColorB));
         }
       }
 
@@ -686,31 +683,18 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
       bar->setPixelColor(j, bar->Color(R, G, B));
       bar->show();
 
-      switch (_isRedWhiteOrBlue)
-      {
-        case RED:
-        {
-          colors[j] = R;
-          break;
-        }
-        case WHITE:
-        {
-          colors[j] = G;
-          break;
-        }
-        default:
-        {
-          colors[j] = B;
-          break;
-        }
-      }
+      colorR[j] = R;
+      colorG[j] = G;
+      colorB[j] = B;
 
       delay(100);
     }
 
     bool areTherePixelsLeftToBeFaded = false;
     pixel = 0;
-    pixelColor = 0;
+    pixelColorR = 0;
+    pixelColorG = 0;
+    pixelColorB = 0;
 
     //fade out the trailing tail
     for (int j = firstPixel; j < numberOfPixels; j++)
@@ -724,33 +708,21 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
           pixel = random(0, p);
         }
         
-        pixelColor = colors[pixel];
-        if ( pixelColor > 0 )
+        pixelColorR = colorR[pixel];
+        pixelColorG = colorG[pixel];
+        pixelColorB = colorB[pixel];
+        if ( pixelColorR > 0 || pixelColorG > 0 || pixelColorB > 0 )
         {
           areTherePixelsLeftToBeFaded = true;
-          pixelColor = (pixelColor/2);
-          colors[pixel] = pixelColor;
-          switch (_isRedWhiteOrBlue)
-          {
-            case RED:
-            {
-              bar->setPixelColor(pixel, bar->Color(pixelColor, G, B));
-              // bar->show();
-              break;
-            }
-            case WHITE:
-            {
-              bar->setPixelColor(pixel, bar->Color(pixelColor, pixelColor, pixelColor));
-              // bar->show();
-              break;
-            }
-            default:
-            {
-              bar->setPixelColor(pixel, bar->Color(R, G, pixelColor));
-              // bar->show();
-              break;
-            }
-          }
+          pixelColorR = (pixelColorR > 0 ? ( pixelColorR / 2 ) : 0);
+          pixelColorG = (pixelColorG > 0 ? ( pixelColorG / 2 ) : 0);
+          pixelColorB = (pixelColorB > 0 ? ( pixelColorB / 2 ) : 0);
+
+          colorR[pixel] = pixelColorR;
+          colorG[pixel] = pixelColorG;
+          colorB[pixel] = pixelColorB;
+
+          bar->setPixelColor(pixel, bar->Color(pixelColorR, pixelColorG, pixelColorB));          
         }
       }
 
@@ -764,64 +736,74 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
       areTherePixelsLeftToBeFaded = false;
     }
 
-    delete [] colors;
+    delete [] colorR;
+    delete [] colorG;
+    delete [] colorB;
 }
 
-void ToggleLightbar(Lightbar LB, bool on, uint8_t R, uint8_t G, uint8_t B)
+void ToggleLightbar(Lightbar LB, bool TurnOn, uint8_t R, uint8_t G, uint8_t B)
 {
-// default color is WHITE
-  Adafruit_NeoPixel *bar;
-  int firstPixel = 0;
-  int numberOfPixels = 0;
-  // turn the desired lightbar on or off
-   switch (LB)
+    // default color is WHITE
+    Adafruit_NeoPixel *bar;
+    int firstPixel = 0;
+    int numberOfPixels = 0;
+    bool turnOffLBSw = false;
+
+    // turn the desired lightbar on or off
+    switch (LB)
+      {
+        case FRONT:
+          {
+            bar = &_frontLightbar;
+            numberOfPixels = NUM_PIXELS_ON_FLB;
+            if ( TurnOn ) { digitalWrite(PIN_FLB_SWITCH, HIGH); } 
+            else { turnOffLBSw = true; }
+            break;
+          }
+        case REAR:
+          {
+            // Rear and Front LBs are chained
+            bar = &_frontLightbar;
+            firstPixel = NUM_PIXELS_ON_FLB;
+            numberOfPixels = NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB;
+            break;
+          }
+        case GROUND_EFFECT:
+          {
+            bar = &_groundEffectLB;
+            numberOfPixels = NUM_PIXELS_ON_GELB;
+            break;
+          }
+        case FRONT_AND_REAR:
+          {
+            bar = &_frontLightbar;
+            numberOfPixels = (NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB);
+            if ( TurnOn ) { digitalWrite(PIN_FLB_SWITCH, HIGH); } 
+            else { turnOffLBSw = true; }
+            break;
+          }
+        default:
+          {
+            bar = &_frontLightbar;
+            numberOfPixels = 6;
+            if ( TurnOn ) { digitalWrite(PIN_FLB_SWITCH, HIGH); } 
+            else { turnOffLBSw = true; }
+            break;
+          }
+      }
+
+    bar->clear();
+    if (TurnOn) 
     {
-      case FRONT:
+        for(int i=firstPixel; i < numberOfPixels; i++)
         {
-          bar = &_frontLightbar;
-          numberOfPixels = NUM_PIXELS_ON_FLB;
-          on ? digitalWrite(PIN_FLB_SWITCH, HIGH) : digitalWrite(PIN_FLB_SWITCH, LOW);
-          break;
-        }
-      case REAR:
-        {
-          // Rear and Front LBs are chained
-          bar = &_frontLightbar;
-          firstPixel = NUM_PIXELS_ON_FLB;
-          numberOfPixels = NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB;
-          break;
-        }
-      case GROUND_EFFECT:
-        {
-          bar = &_groundEffectLB;
-          numberOfPixels = NUM_PIXELS_ON_GELB;
-          break;
-        }
-      case FRONT_AND_REAR:
-        {
-          bar = &_frontLightbar;
-          numberOfPixels = (NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB);
-          on ? digitalWrite(PIN_FLB_SWITCH, HIGH) : digitalWrite(PIN_FLB_SWITCH, LOW);
-          break;
-        }
-      default:
-        {
-          bar = &_frontLightbar;
-          numberOfPixels = 6;
-          on ? digitalWrite(PIN_FLB_SWITCH, HIGH) : digitalWrite(PIN_FLB_SWITCH, LOW);
-          break;
+          bar->setPixelColor(i, bar->Color(R, G, B));
         }
     }
+    bar->show();
 
-  bar->clear();
-  if (on) 
-  {
-      for(int i=firstPixel; i < numberOfPixels; i++)
-      {
-        bar->setPixelColor(i, bar->Color(R, G, B));
-      }
-  }
-  bar->show();
+    //setting the pin low MUST be called here after the show, setting low prior to the .show will result in low red LEDs shown when the LB should be off
+    if ( turnOffLBSw ) digitalWrite(PIN_FLB_SWITCH, LOW);
 }
 
 void TurnBuiltInsOn()
