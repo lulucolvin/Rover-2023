@@ -699,6 +699,7 @@ void ToggleLightbar(Lightbar LB, bool on, uint8_t R, uint8_t G, uint8_t B)
 {
 // default color is WHITE
   Adafruit_NeoPixel *bar;
+  int firstPixel = 0;
   int numberOfPixels = 0;
   // turn the desired lightbar on or off
    switch (LB)
@@ -712,8 +713,10 @@ void ToggleLightbar(Lightbar LB, bool on, uint8_t R, uint8_t G, uint8_t B)
         }
       case REAR:
         {
+          // Rear and Front LBs are chained
           bar = &_rearLightbar;
-          numberOfPixels = NUM_PIXELS_ON_RLB;
+          firstPixel = 6;
+          numberOfPixels = NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB;
           break;
         }
       case GROUND_EFFECT:
@@ -740,7 +743,7 @@ void ToggleLightbar(Lightbar LB, bool on, uint8_t R, uint8_t G, uint8_t B)
   bar->clear();
   if (on) 
   {
-      for(int i=0; i < numberOfPixels; i++)
+      for(int i=firstPixel; i < numberOfPixels; i++)
       {
         bar->setPixelColor(i, bar->Color(R, G, B));
       }
