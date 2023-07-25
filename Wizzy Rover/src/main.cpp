@@ -75,7 +75,7 @@
 #define PIN_DEMO_MODE         34    // when set high, causes the code to run in BW demo mode
 #define PIN_PHOTORESISTOR     35    // Reads the photoresistor analog value
 
-enum Lightbar { FRONT, REAR, GROUND_EFFECT, FRONT_AND_REAR };
+enum Lightbar { FRONT, REAR, GROUND_EFFECT, FRONT_AND_REAR, BUILT_IN };
 enum Color { UNKNOWN, RED, WHITE, BLUE, GREEN };
 
 Color _isRedWhiteOrBlue = RED;
@@ -550,6 +550,12 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
           numberOfPixels = (NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB);
           break;
         }
+      case BUILT_IN:
+      {
+        bar = &_builtInLEDs;
+        numberOfPixels = NUMPIXELS;
+        break;
+      }
       default:
         {
           bar = &_frontLightbar;
