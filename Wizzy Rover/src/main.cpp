@@ -157,7 +157,7 @@ VL53L0X_RangingMeasurementData_t _rear_LOX_Measure;
 void BlinkDebugLED(int BlinkXTimes);
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper = false);
 void Chaser(Color color, Lightbar LB);
-void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB);
+void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool on = true);
 void TurnBuiltInsOn();
 void TurnBuiltInsOff();
 void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B);
@@ -300,7 +300,7 @@ void loop()
     else if ( _keepFLBDemoStrobeOn )
     {
         Chaser(WHITE, FRONT);
-        //StrobeLightbar();
+        //Chaser(WHITE, FRONT);
     }
 
     if(_didSquareChange)
@@ -313,13 +313,15 @@ void loop()
         uint8_t green = random(1, 256);
         uint8_t blue = random(1, 256);
         //Chaser()
-        LightTheRearBar(red, green, blue);
+        ToggleLightbar(red, green, blue, REAR);
+        //LightTheRearBar(red, green, blue);
       }
       else
       {
         _isRearLBOn = false;
         _rearLightbar.clear();
-        LightTheRearBar(0, 0, 0);
+        ToggleLightbar(0, 0, 0, REAR);
+        //LightTheRearBar(0, 0, 0);
       }
 
       _rearLightbar.show();
@@ -332,11 +334,13 @@ void loop()
       {
         _showGroundEffect = !_showGroundEffect;
 
-        if ( _showGroundEffect ) ToggleGroundEffect();
+        if ( _showGroundEffect ) ToggleLightbar(255,255,255, GROUND_EFFECT);
+        //ToggleGroundEffect();
       }
       else
       {
-        if ( _showGroundEffect ) ToggleGroundEffect();
+        if ( _showGroundEffect ) ToggleLightbar(255,255,255, GROUND_EFFECT);
+        //ToggleGroundEffect();
 
         if ( _areBuiltInsOn ) TurnBuiltInsOff(); 
         else                  TurnBuiltInsOn();
@@ -347,7 +351,8 @@ void loop()
     }
     else
     {
-      if ( _showGroundEffect ) ToggleGroundEffect(); 
+      if ( _showGroundEffect ) ToggleLightbar(255,255,255, GROUND_EFFECT);
+      //ToggleGroundEffect(); 
     }
 
     if ( _didL1Change || _didR1Change )
@@ -372,7 +377,8 @@ void loop()
     }
   }
 
-  TurnOnFrontLightbar();
+  //TurnOnFrontLightbar();
+  ToggleLightbar(255, 255, 255, FRONT);
 }
 
 void BlinkDebugLED(int BlinkXTimes)
@@ -691,15 +697,19 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
     delete [] colors;
 }
 
-void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB)
+void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool on)
 {
-  // turn the desired lightbar on
+
+  Adafruit_NeoPixel *bar;
+  int numberOfPixels = 0;
+  // turn the desired lightbar on or off
    switch (LB)
     {
       case FRONT:
         {
           bar = &_frontLightbar;
           numberOfPixels = NUM_PIXELS_ON_FLB;
+          on ? digitalWrite(PIN_FLB_SWITCH, HIGH) : digitalWrite(PIN_FLB_SWITCH, LOW);
           break;
         }
       case REAR:
@@ -729,13 +739,14 @@ void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB)
     }
 
   bar->clear();
-  for(int i=0; i < numberOfPixels; i++)
+  if (on) 
   {
-    bar->SetPixelColor(i, bar->Color(R, G, B));
+      for(int i=0; i < numberOfPixels; i++)
+      {
+        bar->setPixelColor(i, bar->Color(R, G, B));
+      }
   }
-
   bar->show();
-
 }
 
 void TurnBuiltInsOn()
