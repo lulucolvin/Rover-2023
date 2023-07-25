@@ -211,6 +211,25 @@ void setup()
 
 void loop()
 {
+  //front
+  ToggleLightbar(255, 255, 255, FRONT, true);
+  delay(250);
+  ToggleLightbar(255, 255, 255, FRONT, false);
+  delay(250);
+  //rear
+  ToggleLightbar(255, 255, 255, REAR, true);
+    delay(250);
+  ToggleLightbar(255, 255, 255, REAR, false);
+    delay(250);
+
+  //GROUND
+  ToggleLightbar(255, 255, 255, GROUND_EFFECT, true);
+    delay(250);
+  ToggleLightbar(255, 255, 255, GROUND_EFFECT, false);
+    delay(250);
+
+
+
   if ( _loopsBetweenBlinks > LOOPS_BETWEEN_BLINKS )
   {
     _loopsBetweenBlinks = 0;
