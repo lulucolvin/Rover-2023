@@ -371,34 +371,6 @@ void loop()
   ToggleLBDueToLight();
 }
 
-void ToggleLBDueToLight()
-{    
-    //Take a reading using analogRead() on sensor pin and store it in LightVal
-    _lightVal = analogRead(PIN_PHOTORESISTOR);
-
-    //Serial.println(LightVal, DEC);
-    
-    //if LightVal is less than our initial reading (LightCal) minus 50 it is dark and
-    //turn pin HIGH. The (-50) part of the statement sets the sensitivity. The smaller
-    //the number the more sensitive the circuit will be to variances in light.
-    if (_lightVal < _lightCal)
-    {
-      ToggleLightbar(FRONT);
-      _areHeadlightsOn = true;
-    }
-    //else, it is bright, turn pin LOW
-    else
-    {
-      if ( !_areHeadlightsManuallyOn )
-      {
-        ToggleLightbar(FRONT, false);
-        //setting the pin low MUST be called here after the show, setting low prior to the .show will result in low red LEDs shown when the LB should be off
-        digitalWrite(PIN_FLB_SWITCH, LOW);
-        _areHeadlightsOn = false;
-      }
-    }
-}
-
 #pragma region SetUp Helper Methods
 void SetupPins()
 {
@@ -461,6 +433,34 @@ void SetupLightbars()
   _frontLightbar.setBrightness(_lbBrightness); 
 }
 #pragma endregion Setup Helper Methods
+
+void ToggleLBDueToLight()
+{    
+    //Take a reading using analogRead() on sensor pin and store it in LightVal
+    _lightVal = analogRead(PIN_PHOTORESISTOR);
+
+    //Serial.println(LightVal, DEC);
+    
+    //if LightVal is less than our initial reading (LightCal) minus 50 it is dark and
+    //turn pin HIGH. The (-50) part of the statement sets the sensitivity. The smaller
+    //the number the more sensitive the circuit will be to variances in light.
+    if (_lightVal < _lightCal)
+    {
+      ToggleLightbar(FRONT);
+      _areHeadlightsOn = true;
+    }
+    //else, it is bright, turn pin LOW
+    else
+    {
+      if ( !_areHeadlightsManuallyOn )
+      {
+        ToggleLightbar(FRONT, false);
+        //setting the pin low MUST be called here after the show, setting low prior to the .show will result in low red LEDs shown when the LB should be off
+        digitalWrite(PIN_FLB_SWITCH, LOW);
+        _areHeadlightsOn = false;
+      }
+    }
+}
 
 void BlinkDebugLED(int BlinkXTimes)
 {
