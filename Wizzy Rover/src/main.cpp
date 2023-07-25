@@ -156,7 +156,10 @@ VL53L0X_RangingMeasurementData_t _rear_LOX_Measure;
 
 void BlinkDebugLED(int BlinkXTimes);
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper = false);
+void Chaser(Color color, Lightbar LB);
 void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB);
+void TurnBuiltInsOn();
+void TurnBuiltInsOff();
 void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B);
 void FlashBuiltInLEDs();
 bool IsRunningInDemoMode();
@@ -305,10 +308,10 @@ void loop()
       {
         _isRearLBOn = true;
         _rearLightbar.clear();
-        uint8_t _Red = random(1, 256);
-        uint8_t _Green = random(1, 256);
-        uint8_t _Blue = random(1, 256);
-        LightTheRearBar(_Red, _Green, _Blue);
+        uint8_t red = random(1, 256);
+        uint8_t green = random(1, 256);
+        uint8_t blue = random(1, 256);
+        LightTheRearBar(red, green, blue);
       }
       else
       {
@@ -394,6 +397,35 @@ void BlinkDebugLED(int BlinkXTimes)
         delay(100);                           // wait
   }
   delay(250);
+}
+
+void Chaser(Color color, Lightbar LB)
+{
+  uint8_t R = 255;
+  uint8_t G = 255;
+  uint8_t B = 255;
+
+  switch (color)
+  {
+    case RED:
+    {
+      G = 0;
+      B = 0;
+      break;
+    }
+    case BLUE:
+    {
+      R = 0;
+      G = 0;
+      break;
+    }
+    default:
+    {
+      break;
+    }
+  }
+
+  Chaser(R, G, B, LB);
 }
 
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
@@ -684,6 +716,24 @@ void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB)
   bar->show();
 
 }
+
+void TurnBuiltInsOn()
+{
+  _builtInLEDs.clear();
+  _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(30, 144, 255));   //dodger blue
+  _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(255, 140, 0));   //dark orange
+  _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(30, 144, 255));
+  _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(255, 140, 0));
+  _builtInLEDs.show();
+  _areBuiltInsOn = true;
+}
+
+void TurnBuiltInsOff()
+{
+  _builtInLEDs.clear();
+  _builtInLEDs.show();
+  _areBuiltInsOn = false;
+}  
 
 void FlashBuiltInLEDs()
 {
