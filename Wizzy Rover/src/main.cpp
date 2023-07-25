@@ -157,7 +157,7 @@ VL53L0X_RangingMeasurementData_t _rear_LOX_Measure;
 void BlinkDebugLED(int BlinkXTimes);
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper = false);
 void Chaser(Color color, Lightbar LB);
-void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB);
+void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool on = true);
 void TurnBuiltInsOn();
 void TurnBuiltInsOff();
 void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B);
@@ -299,7 +299,7 @@ void loop()
     }
     else if ( _keepFLBDemoStrobeOn )
     {
-        StrobeLightbar();
+        Chaser(WHITE, FRONT);
     }
 
     if(_didSquareChange)
@@ -676,18 +676,19 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
     delete [] colors;
 }
 
-void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB)
+void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool on)
 {
 
   Adafruit_NeoPixel *bar;
   int numberOfPixels = 0;
-  // turn the desired lightbar on
+  // turn the desired lightbar on or off
    switch (LB)
     {
       case FRONT:
         {
           bar = &_frontLightbar;
           numberOfPixels = NUM_PIXELS_ON_FLB;
+          on ? digitalWrite(PIN_FLB_SWITCH, HIGH) : digitalWrite(PIN_FLB_SWITCH, LOW);
           break;
         }
       case REAR:
@@ -717,13 +718,14 @@ void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB)
     }
 
   bar->clear();
-  for(int i=0; i < numberOfPixels; i++)
+  if (on) 
   {
-    bar->setPixelColor(i, bar->Color(R, G, B));
+      for(int i=0; i < numberOfPixels; i++)
+      {
+        bar->setPixelColor(i, bar->Color(R, G, B));
+      }
   }
-
   bar->show();
-
 }
 
 void TurnBuiltInsOn()
