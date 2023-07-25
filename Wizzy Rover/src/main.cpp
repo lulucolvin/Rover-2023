@@ -155,13 +155,13 @@ VL53L0X_RangingMeasurementData_t _front_LOX_Measure;
 VL53L0X_RangingMeasurementData_t _rear_LOX_Measure;
 
 void BlinkDebugLED(int BlinkXTimes);
-void loopGE_DELETE_ME();
-void loopGE_Dbg_DELETE_ME();
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper = false);
 void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB);
+void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B);
+void FlashBuiltInLEDs();
 bool IsRunningInDemoMode();
-void SetupLidarSensors()
-void ReadLidarSensors()
+void SetupLidarSensors();
+void ReadLidarSensors();
 void OnNotify();
 void OnConnect();
 
@@ -367,53 +367,6 @@ void loop()
   }
 
   TurnOnFrontLightbar();
-}
-
-void loopGE_DELETE_ME()
-{
-  uint8_t red = (uint8_t)0; //random(256);
-  uint8_t white = (uint8_t)0; //random(256);
-  uint8_t blue = (uint8_t)255; //random(256);
-  
-  switch (_isRedWhiteOrBlue)
-  {
-    case RED: 
-    {
-      red = (uint8_t)255;  
-      white = 0;  
-      blue = 0;  
-      _nextColor = WHITE; 
-      break;
-    }
-    case WHITE: 
-    {
-      red = (uint8_t)255;  
-      white = (uint8_t)255;  
-      blue = (uint8_t)255;  
-      _nextColor = BLUE; 
-      break;
-    }
-    default: 
-    {
-      red = 0;  
-      white = 0;  
-      blue = (uint8_t)255;  
-      _nextColor = RED; 
-      break;
-    }
-  }
-
-  Chaser(red,white,blue, GROUND_EFFECT, false);
-
-  _isRedWhiteOrBlue = _nextColor;
-}
-
-void loopGE_Dbg_DELETE_ME()
-{
-    loopGE();
-
-    // BlinkDebugLED(10);
-    // delay(500);
 }
 
 void BlinkDebugLED(int BlinkXTimes)
@@ -729,6 +682,98 @@ void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB)
 
   bar->show();
 
+}
+
+void FlashBuiltInLEDs()
+{
+  if ( Ps3.isConnected() )
+  {
+    digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
+    _builtInLEDs.clear();
+    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.show();
+    delay(200);
+    _builtInLEDs.clear();
+    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.show();
+    delay(200);
+    _builtInLEDs.clear();
+    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
+    _builtInLEDs.show();
+    delay(500);
+    _builtInLEDs.clear();
+    _builtInLEDs.show();
+    digitalWrite(PIN_BT_CONNECTED_LED, LOW);
+  }
+  else
+  {
+    _builtInLEDs.clear();
+    _builtInLEDs.show();
+    delay(200);
+    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(255, 0, 0));
+    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(255, 0, 0));
+    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(255, 0, 0));
+    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(255, 0, 0));
+    _builtInLEDs.show();
+    delay(200);
+    _builtInLEDs.clear();
+    _builtInLEDs.show();
+    delay(200);
+    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(255, 0, 0));
+    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(255, 0, 0));
+    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(255, 0, 0));
+    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(255, 0, 0));
+    _builtInLEDs.show();
+    delay(200);
+    _builtInLEDs.clear();
+    _builtInLEDs.show();
+    delay(200);
+    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(255, 0, 0));
+    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(255, 0, 0));
+    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(255, 0, 0));
+    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(255, 0, 0));
+    _builtInLEDs.show();
+    delay(500);
+    _builtInLEDs.clear();
+    _builtInLEDs.show();
+  }
+}
+
+void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B)
+{
+  
+    _builtInLEDs.clear();
+    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
+    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
+    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
+    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
+    _builtInLEDs.show();
+    delay(200);
+    // _builtInLEDs.clear();
+    // _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
+    // _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
+    // _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
+    // _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
+    // _builtInLEDs.show();
+    // delay(200);
+    // _builtInLEDs.clear();
+    // _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
+    // _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
+    // _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
+    // _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
+    // _builtInLEDs.show();
+    // delay(200);
+    // _builtInLEDs.clear();
+    // _builtInLEDs.show();
 }
 
 bool IsRunningInDemoMode()
