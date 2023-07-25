@@ -63,7 +63,7 @@
 #define NUM_PIXELS_ON_GELB    12    // 6 on each LB
 
 #define PIN_FLB_SWITCH        14    // Flips the transistor switch on/off (high is on, closes the circuit)
-#define PIN_PIXELS_RLB        15    // Wizzy Lightbar (rear lightbar) signal/DIN pin...this one will be available
+#define PIN_ABC               15    // Not currently used
 #define PIN_PIXELS            18    // Our LEDs are hardwired to pin 18
 #define PIN_BUZZER            19    // The buzzer is hardwired to pin 19
 #define PIN_PIXELS_GELB       23    // Ground effect LB's
@@ -76,7 +76,7 @@
 #define PIN_PHOTORESISTOR     35    // Reads the photoresistor analog value
 
 enum Lightbar { FRONT, REAR, GROUND_EFFECT, FRONT_AND_REAR };
-enum Color { UNKNOWN, RED, WHITE, BLUE };
+enum Color { UNKNOWN, RED, WHITE, BLUE, GREEN };
 
 Color _isRedWhiteOrBlue = RED;
 Color _nextColor = UNKNOWN;
@@ -144,8 +144,7 @@ int _lightCal;
 int _lightVal;
 
 Adafruit_NeoPixel _builtInLEDs(NUMPIXELS, PIN_PIXELS, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel _frontLightbar(NUM_PIXELS_ON_FLB, PIN_PIXELS_FLB, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel _rearLightbar(NUM_PIXELS_ON_RLB, PIN_PIXELS_RLB, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel _frontLightbar((NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB), PIN_PIXELS_FLB, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel _groundEffectLB(NUM_PIXELS_ON_GELB, PIN_PIXELS_GELB, NEO_GRB + NEO_KHZ800);
 
 Adafruit_VL53L0X _frontLox = Adafruit_VL53L0X();
@@ -189,8 +188,8 @@ void setup()
 
   pinMode(PIN_PIXELS_FLB, OUTPUT);        //pin 27
   digitalWrite(PIN_PIXELS_FLB, LOW);
-  pinMode(PIN_PIXELS_RLB, OUTPUT);        //pin 15
-  digitalWrite(PIN_PIXELS_RLB, LOW);
+  //pinMode(PIN_PIXELS_RLB, OUTPUT);        //pin 15
+  //digitalWrite(PIN_PIXELS_RLB, LOW);
 
   digitalWrite(PIN_DEBUG_LED, HIGH);
   digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
@@ -202,11 +201,60 @@ void setup()
   _nextColor = WHITE;
 
   BlinkDebugLED(1);
-  
+
+  _builtInLEDs.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  _builtInLEDs.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+  delay(250);
+
+  _frontLightbar.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  _frontLightbar.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+  delay(250);
+
   _groundEffectLB.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
   _groundEffectLB.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
+  delay(250);
+
+  Chaser(WHITE, FRONT_AND_REAR);
+  Chaser(WHITE, GROUND_EFFECT);
+  
+  // Setup the motors
+  ledcSetup(1, 30000, 8); //we set up PWM channel 1, frequency of 30,000 Hz, 8 bit resolution
+  ledcAttachPin(_inOne,1); //we're going to attach inOne to our new PWM channel
+  ledcSetup(2, 30000, 8); //we'll set up the rest of our PWM channels, just like before.
+  ledcAttachPin(_inTwo,2); //this time we'll need to set up 8 PWM channels!
+  ledcSetup(3, 30000, 8);
+  ledcAttachPin(_inThree,3);
+  ledcSetup(4, 30000, 8);
+  ledcAttachPin(_inFour,4);
 
   delay(250);
+
+  _lbBrightness = 128;
+  _frontLightbar.setBrightness(_lbBrightness); 
+
+  Ps3.attach(OnNotify);
+  Ps3.attachOnConnect(OnConnect);
+  Ps3.begin(_ps3MacAddr);
+
+#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__) || defined(__AVR_ATmega1280__) 
+  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
+#endif
+#if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__) 
+  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
+#endif
+#if defined(__ESP32__)
+  _lightCal = 1600;
+#endif
+
+  SetupLidarSensors();
+
+  delay(1000);
+  BlinkDebugLED(3);
+
+  //digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
+  //digitalWrite(PIN_BT_CONNECTED_LED, LOW);
+
+  _loopsBetweenBlinks = (LOOPS_BETWEEN_BLINKS + 1);
 }
 
 void loop()
@@ -319,6 +367,7 @@ void loop()
     else if ( _keepFLBDemoStrobeOn )
     {
         Chaser(WHITE, FRONT);
+        //Chaser(WHITE, FRONT);
     }
 
     if(_didSquareChange)
@@ -326,22 +375,17 @@ void loop()
       if ( !_isRearLBOn )
       {
         _isRearLBOn = true;
-        _rearLightbar.clear();
         uint8_t red = random(1, 256);
         uint8_t green = random(1, 256);
         uint8_t blue = random(1, 256);
         ToggleLightbar(REAR, red, green, blue);
-        //LightTheRearBar(red, green, blue);
       }
       else
       {
         _isRearLBOn = false;
-        _rearLightbar.clear();
         ToggleLightbar(REAR);
-        //LightTheRearBar(0, 0, 0);
       }
 
-      _rearLightbar.show();
       _didSquareChange = false;
     }
 
@@ -352,12 +396,10 @@ void loop()
         _showGroundEffect = !_showGroundEffect;
 
         if ( _showGroundEffect ) ToggleLightbar(GROUND_EFFECT);
-        //ToggleGroundEffect();
       }
       else
       {
         if ( _showGroundEffect ) ToggleLightbar(GROUND_EFFECT);
-        //ToggleGroundEffect();
 
         if ( _areBuiltInsOn ) TurnBuiltInsOff(); 
         else                  TurnBuiltInsOn();
@@ -369,7 +411,6 @@ void loop()
     else
     {
       if ( _showGroundEffect ) ToggleLightbar(GROUND_EFFECT);
-      //ToggleGroundEffect(); 
     }
 
     if ( _didL1Change || _didR1Change )
@@ -426,6 +467,7 @@ void BlinkDebugLED(int BlinkXTimes)
 
 void Chaser(Color color, Lightbar LB)
 {
+  //default color is WHITE
   uint8_t R = 255;
   uint8_t G = 255;
   uint8_t B = 255;
@@ -435,6 +477,12 @@ void Chaser(Color color, Lightbar LB)
     case RED:
     {
       G = 0;
+      B = 0;
+      break;
+    }
+    case GREEN:
+    {
+      R = 0;
       B = 0;
       break;
     }
@@ -455,6 +503,28 @@ void Chaser(Color color, Lightbar LB)
 
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
 {  
+#pragma Region Code To Consider
+
+    //the following code was from StrobeLightbar()...it set the switch vs. turning the lightbar on directly...that needs to be coded here
+    // _frontLightbar.clear();
+    // digitalWrite(PIN_FLB_SWITCH, HIGH);
+    // _frontLightbar.show();
+  
+    // digitalWrite(PIN_FLB_SWITCH, LOW);
+    // delay(1);
+
+    // if ( _areHeadlightsOn )
+    // {
+    //   LightTheFrontBar();
+    //   digitalWrite(PIN_FLB_SWITCH, HIGH);
+    //   _frontLightbar.show();
+    // }
+
+    // //BlinkDebugLED(5);
+    // _isStrobeOn = false;
+#pragma EndRegion Code To Consider
+
+    int firstPixel = 0;
     int numberOfPixels;
     Adafruit_NeoPixel* bar = &_groundEffectLB;
 
@@ -468,8 +538,9 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
         }
       case REAR:
         {
-          bar = &_rearLightbar;
-          numberOfPixels = NUM_PIXELS_ON_RLB;
+          bar = &_frontLightbar;
+          firstPixel = NUM_PIXELS_ON_FLB;
+          numberOfPixels = (NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB);
           break;
         }
       case GROUND_EFFECT:
@@ -488,6 +559,7 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
         {
           bar = &_frontLightbar;
           numberOfPixels = 6;
+          firstPixel = 0;
           break;
         }
     }
@@ -501,7 +573,7 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
     uint8_t pixelColor = 0;
 
     //go from left to right
-    for (int j = 0; j < numberOfPixels; j++)
+    for (int j = firstPixel; j < numberOfPixels; j++)
     {
       for (int p = 0; p < numberOfPixels; p++)
       {       
@@ -570,7 +642,7 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
     pixelColor = 0;
 
     //go from right to left
-    for (int j = (numberOfPixels-1); j >= 0; j--)
+    for (int j = (numberOfPixels-1); j >= firstPixel; j--)
     {
       for (int p = 0; p < numberOfPixels; p++)
       {
@@ -641,7 +713,7 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
     pixelColor = 0;
 
     //fade out the trailing tail
-    for (int j = 0; j < numberOfPixels; j++)
+    for (int j = firstPixel; j < numberOfPixels; j++)
     {
       for (int p = 0; p < numberOfPixels; p++)
       {
@@ -714,8 +786,8 @@ void ToggleLightbar(Lightbar LB, bool on, uint8_t R, uint8_t G, uint8_t B)
       case REAR:
         {
           // Rear and Front LBs are chained
-          bar = &_rearLightbar;
-          firstPixel = 6;
+          bar = &_frontLightbar;
+          firstPixel = NUM_PIXELS_ON_FLB;
           numberOfPixels = NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB;
           break;
         }
@@ -736,6 +808,7 @@ void ToggleLightbar(Lightbar LB, bool on, uint8_t R, uint8_t G, uint8_t B)
         {
           bar = &_frontLightbar;
           numberOfPixels = 6;
+          on ? digitalWrite(PIN_FLB_SWITCH, HIGH) : digitalWrite(PIN_FLB_SWITCH, LOW);
           break;
         }
     }
