@@ -290,8 +290,6 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
     int numberOfPixels;
     Adafruit_NeoPixel* bar = &_groundEffectLB;
 
-    RandomTrailTaper = false;
-
     switch (LB)
     {
       case FRONT:
