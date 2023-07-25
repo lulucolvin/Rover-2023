@@ -268,7 +268,7 @@ void loop()
 
     if(_didCrossChange)
     {
-          _keepFLBDemoStrobeOn = !_keepFLBDemoStrobeOn;
+        _keepFLBDemoStrobeOn = !_keepFLBDemoStrobeOn;
     
         Chaser(WHITE, FRONT);
         _didCrossChange = false;
