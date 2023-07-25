@@ -439,22 +439,24 @@ void Chaser(Color color, Lightbar LB)
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
 {  
 #pragma Region Code To Consider
-    _frontLightbar.clear();
-    digitalWrite(PIN_FLB_SWITCH, HIGH);
-    _frontLightbar.show();
+
+    //the following code was from StrobeLightbar()...it set the switch vs. turning the lightbar on directly...that needs to be coded here
+    // _frontLightbar.clear();
+    // digitalWrite(PIN_FLB_SWITCH, HIGH);
+    // _frontLightbar.show();
   
-    digitalWrite(PIN_FLB_SWITCH, LOW);
-    delay(1);
+    // digitalWrite(PIN_FLB_SWITCH, LOW);
+    // delay(1);
 
-    if ( _areHeadlightsOn )
-    {
-      LightTheFrontBar();
-      digitalWrite(PIN_FLB_SWITCH, HIGH);
-      _frontLightbar.show();
-    }
+    // if ( _areHeadlightsOn )
+    // {
+    //   LightTheFrontBar();
+    //   digitalWrite(PIN_FLB_SWITCH, HIGH);
+    //   _frontLightbar.show();
+    // }
 
-    //BlinkDebugLED(5);
-    _isStrobeOn = false;
+    // //BlinkDebugLED(5);
+    // _isStrobeOn = false;
 #pragma EndRegion Code To Consider
 
     int numberOfPixels;
