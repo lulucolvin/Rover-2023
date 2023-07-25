@@ -224,31 +224,7 @@ void loop()
       delay(100);
     }
 
-    for ( int j = 0; j < 3; j++ )
-    {
-      //flash the leds blue, but in a circular pattern
-      _builtInLEDs.clear();
-      _builtInLEDs.show();
-      delay(100);
-      _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-      _builtInLEDs.show();
-      delay(100);
-      _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 0));
-      _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-      _builtInLEDs.show();
-      delay(100);
-      _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 0));
-      _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-      _builtInLEDs.show();
-      delay(100);
-      _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 0));
-      _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-      _builtInLEDs.show();
-      delay(100);
-      _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 0));
-      _builtInLEDs.show();
-      delay(100);
-    }
+    Chaser(BLUE, BUILT_IN);
 
     if( Ps3.isConnected())
     {
@@ -300,7 +276,6 @@ void loop()
     else if ( _keepFLBDemoStrobeOn )
     {
         Chaser(WHITE, FRONT);
-        //Chaser(WHITE, FRONT);
     }
 
     if(_didSquareChange)
