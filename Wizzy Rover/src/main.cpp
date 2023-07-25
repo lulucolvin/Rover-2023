@@ -707,7 +707,12 @@ void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool on)
         {
           bar = &_frontLightbar;
           numberOfPixels = NUM_PIXELS_ON_FLB;
-          on ? digitalWrite(PIN_FLB_SWITCH, HIGH) : digitalWrite(PIN_FLB_SWITCH, LOW);
+          if(on){
+            digitalWrite(PIN_FLB_SWITCH, HIGH);
+          }
+          else{
+            digitalWrite(PIN_FLB_SWITCH, LOW);
+          } 
           break;
         }
       case REAR:
