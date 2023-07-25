@@ -640,6 +640,9 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
 
 void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB)
 {
+
+  Adafruit_NeoPixel *bar;
+  int numberOfPixels = 0;
   // turn the desired lightbar on
    switch (LB)
     {
@@ -678,7 +681,7 @@ void ToggleLightbar(uint8_t R, uint8_t G, uint8_t B, Lightbar LB)
   bar->clear();
   for(int i=0; i < numberOfPixels; i++)
   {
-    bar->SetPixelColor(i, bar->Color(R, G, B));
+    bar->setPixelColor(i, bar->Color(R, G, B));
   }
 
   bar->show();
