@@ -104,11 +104,12 @@ int _color = 1;
 //use SixAxisPairTool to set a custom mac address...the address below is the default that ships on the device
 //char _ps3MacAddr[20] = { "01:02:03:04:05:06" };
 //char _ps3MacAddr[20] = { "21:02:03:04:05:02"}; //2021 class
-char _ps3MacAddr[20] = {"22:07:24:04:05:16"}; //2022 class
+//char _ps3MacAddr[20] = { "23:07:31:04:05:01"}; //2023 class
+char _ps3MacAddr[20] = {"21:02:03:04:05:02"}; //2022 class
 
 uint8_t _lbBrightness = 128;
 const uint8_t MAX_LB_BRIGHTNESS = 255;
-const int LOOPS_BETWEEN_BLINKS = 25;
+const int LOOPS_BETWEEN_BLINKS = 5;
 
 bool _isFrontObstacleDetected = false;
 bool _isRearObstacleDetected = false;
@@ -169,16 +170,19 @@ void OnConnect();
 void SetupLightbars();
 void SetupMotors();
 void SetupPins();
+void setup_PROD();
+void loop_PROD();
 
-void setup()
+
+void setup_PROD()
 {
   SetupPins();
   SetupLightbars();
   SetupMotors();
 
   // for debug
-  Chaser(WHITE, FRONT_AND_REAR);
-  Chaser(WHITE, GROUND_EFFECT);
+  Chaser(BLUE, FRONT_AND_REAR);
+  Chaser(BLUE, GROUND_EFFECT);
 
   Ps3.attach(OnNotify);
   Ps3.attachOnConnect(OnConnect);
@@ -202,7 +206,36 @@ void setup()
   _loopsBetweenBlinks = (LOOPS_BETWEEN_BLINKS + 1);
 }
 
+void setup()
+{
+  pinMode(PIN_BT_CONNECTED_LED, OUTPUT);  //pin 26
+
+  Ps3.attach(OnNotify);
+  Ps3.attachOnConnect(OnConnect);
+  Ps3.begin(_ps3MacAddr);
+}
+
 void loop()
+{
+  if ( !Ps3.isConnected() )
+  {
+    for ( int j = 0; j < 3; j++ )
+    {
+      digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
+      delay(100);
+      digitalWrite(PIN_BT_CONNECTED_LED, LOW);
+      delay(100);
+    }
+
+      Ps3.begin(_ps3MacAddr);
+      delay(2000);
+  }
+  else
+  {
+      digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
+  }
+}
+void loop_PROD()
 {
   if ( _loopsBetweenBlinks > LOOPS_BETWEEN_BLINKS )
   {
@@ -226,16 +259,16 @@ void loop()
 
     Chaser(BLUE, BUILT_IN);
 
-    if( Ps3.isConnected())
-    {
-      FlashBuiltInLEDs(3, 0, 0, 255);
-    }
-    else
-    { 
-      FlashBuiltInLEDs(3, 255, 0, 0);
-    }
-    Ps3.begin(_ps3MacAddr);
-    delay(2000);
+    // if( Ps3.isConnected())
+    // {
+    //   FlashBuiltInLEDs(3, 0, 0, 255);
+    // }
+    // else
+    // { 
+    //   FlashBuiltInLEDs(3, 255, 0, 0);
+    // }
+    // Ps3.begin(_ps3MacAddr);
+    // delay(2000);
   }
   else
   {
@@ -409,6 +442,7 @@ void SetupLightbars()
 }
 #pragma endregion Setup Helper Methods
 
+#pragma region LEDs
 void ToggleLBDueToLight()
 {    
     //Take a reading using analogRead() on sensor pin and store it in LightVal
@@ -813,6 +847,8 @@ void FlashBuiltInLEDs(int numFlashes, uint8_t R, uint8_t G, uint8_t B)
   }
 }
 
+#pragma endregion LEDs
+
 bool IsRunningInDemoMode()
 {
   //return false;
@@ -820,6 +856,7 @@ bool IsRunningInDemoMode()
   return ( analogRead(PIN_DEMO_MODE) == 4095 );
 }
 
+#pragma region LiDar
 /*
     - Reset all sensors by setting all of their XSHUT pins low for delay(10), then set all XSHUT high to bring out of reset
     - Keep sensor #1 awake by keeping XSHUT pin high
@@ -1017,6 +1054,9 @@ void ReadLidarSensors()
   }
 }
 
+#pragma endregion LiDar
+
+#pragma region PS3
 void OnNotify()
 {
     //BlinkDebugLED(1);
@@ -1256,6 +1296,9 @@ void OnConnect()
     delay(2000);
     _builtInLEDs.clear();
     _builtInLEDs.show();
-    digitalWrite(PIN_BT_CONNECTED_LED, LOW);
-}
+    //digitalWrite(PIN_BT_CONNECTED_LED, LOW);
 
+    //the following line needs to be tested
+    Ps3.setRumble(100.0, 250);
+}
+#pragma endregion PS3
