@@ -42,7 +42,7 @@
 //  pio run --target upload
 //  pio run --target upload --upload-port com5
 //
-// MAKE CERTAIN YOUR TERMINAL WINDOW IS IN THE CORRECT DIRECTORY...ie C:\Users\perkins\Documents\PlatformIO\Projects\ACBR RGB One
+// MAKE CERTAIN YOUR TERMINAL WINDOW IS IN THE CORRECT DIRECTORY ..\PlatformIO\Projects\Rover-2023\Wizzy Rover
 //     if not, use the cd command via the PS prompt to change
 
 #include <Arduino.h>            // Arduino Framework
@@ -215,15 +215,7 @@ void loop()
     }
 
     Chaser(BLUE, BUILT_IN);
-
-    if( Ps3.isConnected())
-    {
-      FlashBuiltInLEDs(3, 0, 0, 255);
-    }
-    else
-    { 
-      FlashBuiltInLEDs(3, 255, 0, 0);
-    }
+    
     Ps3.begin(_ps3MacAddr);
     delay(2000);
   }
@@ -231,14 +223,12 @@ void loop()
   {
     digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
 
-    //FlashBuiltInLEDs(1, 255, 255, 255);
+    FlashBuiltInLEDs();
     delay(125);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
 
     ReadLidarSensors();
 
-    delay(1);
+    delay(100);
 
     if ( _didCircleChange )
     {
