@@ -894,10 +894,6 @@ void ReadLidarSensors()
     _isRearObstacleDetected = false;
     return;
   }
-  //else
-  //{
-  //  BlinkDebugLED(3);
-  //}
 
   if ( !_isFrontLidarOn || !_isRearLidarOn ) SetupLidarSensors();
 
