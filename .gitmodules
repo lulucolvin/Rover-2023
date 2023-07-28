@@ -1,0 +1,3 @@
+[submodule "Wizzy Rover/components/ps3"]
+	path = Wizzy Rover/components/ps3
+	url = https://github.com/jvpernis/esp32-ps3.git
