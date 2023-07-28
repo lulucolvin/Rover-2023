@@ -51,7 +51,7 @@
 #include <Ps3Controller.h>
 #include <esp32-hal-ledc.h>
 #include "Adafruit_VL53L0X.h"
-
+#include <tuple>
 
 #ifndef __ESP32__
 #define __ESP32__
@@ -153,23 +153,28 @@ Adafruit_VL53L0X _rearLox = Adafruit_VL53L0X();
 VL53L0X_RangingMeasurementData_t _front_LOX_Measure;
 VL53L0X_RangingMeasurementData_t _rear_LOX_Measure;
 
+// LED related methods
+void SetupLightbars();
 void BlinkDebugLED(int BlinkXTimes);
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper = false);
-void Chaser(Color color, Lightbar LB);
+void Chaser(Color color, Lightbar LB, bool RandomTrailTaper = false);
 void ToggleLightbar(Lightbar LB, bool TurnOn = true, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
 void ToggleLBDueToLight();
-void TurnBuiltInsOn();
-void TurnBuiltInsOff();
-void FlashBuiltInLEDs(int numFlashes = 1, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
+void FlashLightbar(Lightbar LB, int numFlashes = 1, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
 bool IsRunningInDemoMode();
+
+// LiDar sensor related methods
 void SetupLidarSensors();
 void ReadLidarSensors();
+
+// PS3 related methods
 void OnNotify();
 void OnConnect();
-void SetupLightbars();
+
 void SetupMotors();
 void SetupPins();
 
+// setup will run once then loop() will run continuously
 void setup()
 {
   SetupPins();
@@ -223,7 +228,7 @@ void loop()
   {
     digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
 
-    FlashBuiltInLEDs();
+    FlashLightbar(BUILT_IN);
     delay(125);
 
     ReadLidarSensors();
@@ -289,8 +294,8 @@ void loop()
       {
         if ( _showGroundEffect ) ToggleLightbar(GROUND_EFFECT);
 
-        if ( _areBuiltInsOn ) TurnBuiltInsOff(); 
-        else                  TurnBuiltInsOn();
+        if ( _areBuiltInsOn ) ToggleLightbar(BUILT_IN); 
+        else                  ToggleLightbar(BUILT_IN, false);
       }
 
       _didL2Change = false;
@@ -307,15 +312,11 @@ void loop()
 
       if ( _useLiDar ) 
       {
-        FlashBuiltInLEDs();
-        delay(200);
-        FlashBuiltInLEDs(1, 0, 0, 0);
+        FlashLightbar(BUILT_IN);
       }
       else
       {
-        FlashBuiltInLEDs(1, 255, 0, 0);
-        delay(200);
-        FlashBuiltInLEDs(1, 0, 0, 0);
+        FlashLightbar(BUILT_IN, 1, 255, 0, 0);
       }
       delay(125);
       _builtInLEDs.clear();
@@ -454,45 +455,48 @@ void BlinkDebugLED(int BlinkXTimes)
   delay(250);
 }
 
-void Chaser(Color color, Lightbar LB)
+// Helper method to take our color enum and create a 32-bit RGB color
+uint32_t ToRGB32(Color color)
 {
-  //default color is WHITE
-  uint8_t R = 255;
-  uint8_t G = 255;
-  uint8_t B = 255;
-
   switch (color)
   {
     case RED:
-    {
-      G = 0;
-      B = 0;
-      break;
-    }
-    case GREEN:
-    {
-      R = 0;
-      B = 0;
-      break;
-    }
+      return Adafruit_NeoPixel::Color(255, 0, 0);
+    case WHITE:
+      return Adafruit_NeoPixel::Color(255, 255, 255);
     case BLUE:
-    {
-      R = 0;
-      G = 0;
-      break;
-    }
-    default:
-    {
-      break;
-    }
+      return Adafruit_NeoPixel::Color(0, 0, 255);
+    case GREEN:
+      return Adafruit_NeoPixel::Color(0, 255, 0);
+    default: 
+      return Adafruit_NeoPixel::Color(255, 255, 255);
   }
+}
+std::tuple<uint8_t, uint8_t, uint8_t> ToRGB8(Color color){
+  switch (color)
+  {
+    case RED:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 0, 0);
+    case WHITE:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 255, 255);
+    case BLUE:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(0, 0, 255);
+    case GREEN:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(0, 255, 0);
+    default: 
+      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 255, 255);
+  }
+}
 
-  Chaser(R, G, B, LB);
+void Chaser(Color color, Lightbar LB, bool RandomTrailTaper)
+{
+  std::tuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
+  Chaser(std::get<0>(rgb), std::get<1>(rgb), std::get<2>(rgb), LB, RandomTrailTaper);
 }
 
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
-{  
-#pragma Region Code To Consider
+{
+#pragma region Code To Consider
 
     //the following code was from StrobeLightbar()...it set the switch vs. turning the lightbar on directly...that needs to be coded here
     // _frontLightbar.clear();
@@ -511,7 +515,7 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
 
     // //BlinkDebugLED(5);
     // _isStrobeOn = false;
-#pragma EndRegion Code To Consider
+#pragma endregion Code To Consider
 
     int firstPixel = 0;
     int numberOfPixels;
@@ -748,6 +752,12 @@ void ToggleLightbar(Lightbar LB, bool TurnOn, uint8_t R, uint8_t G, uint8_t B)
             else { turnOffLBSw = true; }
             break;
           }
+        case BUILT_IN:
+        {
+          bar = &_builtInLEDs;
+          numberOfPixels = NUMPIXELS;
+          break;
+        }
         default:
           {
             bar = &_frontLightbar;
@@ -790,17 +800,21 @@ void TurnBuiltInsOff()
   _areBuiltInsOn = false;
 }  
 
-void FlashBuiltInLEDs(int numFlashes, uint8_t R, uint8_t G, uint8_t B)
+void FlashLightbar(Lightbar LB, int numFlashes, uint8_t R, uint8_t G, uint8_t B)
 {
-  for(int i = 0; i < numFlashes; i++)
+ FlashLightbar(LB, numFlashes, Adafruit_NeoPixel::Color(R, G, B));
+}
+void FlashLightbar(Lightbar LB, int numFlashes, Color color)
+{
+  FlashLightbar(LB, numFlashes, ToRGB32(color));
+}
+void FlashLightbar(Lightbar LB, int numFlashes, uint32_t color)
+{
+  // turn desired LB on and then back off to flash it
+  for(int i=0; i< numFlashes; i++)
   {
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.show();
-    delay(200);
+    ToggleLightbar(LB, true, color);
+    ToggleLightbar(LB, false);
   }
 }
 
@@ -827,8 +841,6 @@ void SetupLidarSensors()
 
   if ( !_useLiDar ) return;
 
-  //FlashBuiltInLEDs(); //white
-
   // reset both front & rear lidar
   if ( !_isFrontLidarOn ) digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
   if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, LOW);
@@ -842,14 +854,12 @@ void SetupLidarSensors()
   // keep the front on, turn off the rear
   if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, LOW);
 
-  //FlashBuiltInLEDs(1, 255, 0, 0); //red
-
   // initing front
   if ( !_isFrontLidarOn )
   {
     if(!_frontLox.begin(FRONT_FACING_LOX_I2C_ADDR, true)) 
     {
-      FlashBuiltInLEDs(1, 255, 255, 0); //yellow
+      FlashLightbar(BUILT_IN, 1, 255, 255, 0); //yellow
       Serial.println(F("Failed to boot first VL53L0X"));
       _isFrontLidarOn = false;
     }
@@ -859,8 +869,6 @@ void SetupLidarSensors()
     }
     delay(50);
     }
-
-  //FlashBuiltInLEDs(1, 0, 0, 255); //blue
 
   // activating rear
   //digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
@@ -872,7 +880,7 @@ void SetupLidarSensors()
   {
     if(!_rearLox.begin(REAR_FACING_LOX_I2C_ADDR)) 
     {
-      FlashBuiltInLEDs(1, 0, 255, 0); //green
+      FlashLightbar(BUILT_IN, 1, 0, 255, 0); //green
       Serial.println(F("Failed to boot rear VL53L0X"));
       _isRearLidarOn = false;
     }
@@ -906,12 +914,7 @@ void ReadLidarSensors()
   //_FrontLox.rangingTest(&measure, false); // pass in 'true' to get debug data printout!
   if ( !_areBuiltInsOn )
   {
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(_redValue, 0, 0));   
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(_redValue, 0, 0));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(_redValue, 0, 0));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(_redValue, 0, 0));
-    _builtInLEDs.show();
+    ToggleLightbar(BUILT_IN, true, _redValue, 0, 0);
   }
 
   bool stopForward = false;
@@ -1224,7 +1227,7 @@ void OnNotify()
 void OnConnect()
 {
     digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-    FlashBuiltInLEDs(3, 0, 0, 255);
+    FlashLightbar(BUILT_IN, 3, 0, 0, 255);
     digitalWrite(PIN_BT_CONNECTED_LED, LOW);
 }
 
