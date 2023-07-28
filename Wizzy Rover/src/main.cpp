@@ -47,9 +47,9 @@
 
 #include <Arduino.h>            // Arduino Framework
 #include <Adafruit_NeoPixel.h>
-#include <Tone32.h>
+//#include <Tone32.h>
 #include <Ps3Controller.h>
-#include <esp32-hal-ledc.h>
+//#include <esp32-hal-ledc.h>
 #include "Adafruit_VL53L0X.h"
 #include <tuple>
 
@@ -62,11 +62,19 @@
 #define NUM_PIXELS_ON_RLB     6     // We have 6 LEDs on the rear lightbar (RLB)
 #define NUM_PIXELS_ON_GELB    12    // 6 on each LB
 
+#define PIN_RESERVED1         12    // motor 2
+#define PIN_RESERVED2         13    // motor 1
 #define PIN_FLB_SWITCH        14    // Flips the transistor switch on/off (high is on, closes the circuit)
-#define PIN_ABC               15    // Not currently used
+#define PIN_AVAIL_1           15    // Not currently used
+#define PIN_RESERVED3         16    // motor 3
+#define PIN_RESERVED4         17    // motor 4
 #define PIN_PIXELS            18    // Our LEDs are hardwired to pin 18
 #define PIN_BUZZER            19    // The buzzer is hardwired to pin 19
+#define PIN_AVAIL_2           20    // Not currently used
+#define PIN_SDA_FLOX          21    // LiDar data pin
+#define PIN_SCL_FLOX          22    // LiDar clock pin
 #define PIN_PIXELS_GELB       23    // Ground effect LB's
+#define PIN_UNKNOWN           24    // Not defined on board
 #define PIN_XSHUT_REAR_LOX    25    // shutdown pin for rear facing LOX
 #define PIN_BT_CONNECTED_LED  26    // Blue LED indicated BT connection established
 #define PIN_PIXELS_FLB        27    // Lightbar signal/DIN pin...this will control both front & rear LB
@@ -105,11 +113,12 @@ int _color = 1;
 //use SixAxisPairTool to set a custom mac address...the address below is the default that ships on the device
 //char _ps3MacAddr[20] = { "01:02:03:04:05:06" };
 //char _ps3MacAddr[20] = { "21:02:03:04:05:02"}; //2021 class
-char _ps3MacAddr[20] = {"22:07:24:04:05:16"}; //2022 class
+//char _ps3MacAddr[20] = { "23:07:31:04:05:01"}; //2023 class
+char _ps3MacAddr[20] = {"23:07:31:04:05:01"}; //2022 class
 
 uint8_t _lbBrightness = 128;
 const uint8_t MAX_LB_BRIGHTNESS = 255;
-const int LOOPS_BETWEEN_BLINKS = 25;
+const int LOOPS_BETWEEN_BLINKS = 5;
 
 bool _isFrontObstacleDetected = false;
 bool _isRearObstacleDetected = false;
@@ -126,7 +135,7 @@ bool _didTriangleChange = false;
 bool _didCrossChange = false;
 bool _didSquareChange = false;
 bool _isTestingLEDsOnly = false;
-bool _useLiDar = false;
+bool _useLiDar = true;
 bool _isFrontLidarOn = false;
 bool _isRearLidarOn = false;
 bool _didL1Change = false;
@@ -176,16 +185,19 @@ void OnConnect();
 void SetupMotors();
 void SetupPins();
 
-// setup will run once then loop() will run continuously
 void setup()
 {
+  Serial.begin(115200);
+  
   SetupPins();
   SetupLightbars();
   SetupMotors();
 
+  digitalWrite(PIN_DEBUG_LED, HIGH);
+  
   // for debug
-  Chaser(WHITE, FRONT_AND_REAR);
-  Chaser(WHITE, GROUND_EFFECT);
+  Chaser(BLUE, FRONT_AND_REAR);
+  Chaser(BLUE, GROUND_EFFECT);
 
   Ps3.attach(OnNotify);
   Ps3.attachOnConnect(OnConnect);
@@ -194,9 +206,10 @@ void setup()
   SetupLidarSensors();
 
   delay(1000);
-  BlinkDebugLED(3);
 
   _loopsBetweenBlinks = (LOOPS_BETWEEN_BLINKS + 1);
+
+  digitalWrite(PIN_DEBUG_LED, LOW);  
 }
 
 void loop()
@@ -213,6 +226,8 @@ void loop()
 
   if ( !Ps3.isConnected() )
   {
+    Serial.println("No PS3 controller connected...");
+    
     for ( int j = 0; j < 3; j++ )
     {
       digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
@@ -222,9 +237,17 @@ void loop()
     }
 
     Chaser(BLUE, BUILT_IN);
-    
-    Ps3.begin(_ps3MacAddr);
-    delay(2000);
+
+    // if( Ps3.isConnected())
+    // {
+    //   FlashBuiltInLEDs(3, 0, 0, 255);
+    // }
+    // else
+    // { 
+    //   FlashBuiltInLEDs(3, 255, 0, 0);
+    // }
+    // Ps3.begin(_ps3MacAddr);
+    // delay(2000);
   }
   else
   {
@@ -403,6 +426,7 @@ void SetupLightbars()
 }
 #pragma endregion Setup Helper Methods
 
+#pragma region LEDs
 void ToggleLBDueToLight()
 {    
     //Take a reading using analogRead() on sensor pin and store it in LightVal
@@ -592,7 +616,7 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
         }
       }
 
-	    //set the leading pixel/led
+      //set the leading pixel/led
       bar->setPixelColor(j, bar->Color(R, G, B));
       bar->show();
       colorR[j] = R;
@@ -635,7 +659,7 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
         }
       }
 
-	    //set the leading pixel/led
+      //set the leading pixel/led
       bar->setPixelColor(j, bar->Color(R, G, B));
       bar->show();
 
@@ -682,7 +706,7 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
         }
       }
 
-	    //set the leading pixel/led
+      //set the leading pixel/led
       bar->show();
 
       delay(100);
@@ -812,6 +836,8 @@ void FlashLightbar(Lightbar LB, int numFlashes, uint32_t color)
   }
 }
 
+#pragma endregion LEDs
+
 bool IsRunningInDemoMode()
 {
   //return false;
@@ -819,6 +845,7 @@ bool IsRunningInDemoMode()
   return ( analogRead(PIN_DEMO_MODE) == 4095 );
 }
 
+#pragma region LiDar
 /*
     - Reset all sensors by setting all of their XSHUT pins low for delay(10), then set all XSHUT high to bring out of reset
     - Keep sensor #1 awake by keeping XSHUT pin high
@@ -833,7 +860,12 @@ void SetupLidarSensors()
   pinMode(PIN_XSHUT_FRONT_LOX, OUTPUT);   //pin 33
   pinMode(PIN_XSHUT_REAR_LOX, OUTPUT);    //pin 25
 
+  Serial.print("using LiDar: ");
+  Serial.println(_useLiDar);
+
   if ( !_useLiDar ) return;
+
+  Serial.println("Resetting LiDar sensors...");
 
   // reset both front & rear lidar
   if ( !_isFrontLidarOn ) digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
@@ -848,6 +880,11 @@ void SetupLidarSensors()
   // keep the front on, turn off the rear
   if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, LOW);
 
+  Serial.println("LiDar sensors are ready...");
+
+  Serial.print("Call begin on front LOX? ");
+  Serial.println(_isFrontLidarOn);
+
   // initing front
   if ( !_isFrontLidarOn )
   {
@@ -859,6 +896,7 @@ void SetupLidarSensors()
     }
     else
     {
+      Serial.println("Front LiDar is ready...");
       _isFrontLidarOn = true;
     }
     delay(50);
@@ -868,6 +906,9 @@ void SetupLidarSensors()
   //digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
   if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, HIGH);
   delay(50);
+
+  Serial.print("Call begin on rear LOX? ");
+  Serial.println(_isRearLidarOn);
 
   //initing rear
   if ( !_isRearLidarOn ) 
@@ -880,6 +921,7 @@ void SetupLidarSensors()
     }
     else
     {
+      Serial.println("Rear LiDar is ready...");
       _isRearLidarOn = true;
     }
   }
@@ -889,11 +931,16 @@ void ReadLidarSensors()
 {
   if ( !_useLiDar ) 
   {
-    BlinkDebugLED(2);
+    //BlinkDebugLED(2);
     _isFrontObstacleDetected = false;
     _isRearObstacleDetected = false;
     return;
   }
+
+  Serial.print("LiDar is ready (Front:Rear): ");
+  Serial.print(_isFrontLidarOn);
+  Serial.print(":");
+  Serial.println(_isRearLidarOn);
 
   if ( !_isFrontLidarOn || !_isRearLidarOn ) SetupLidarSensors();
 
@@ -909,6 +956,7 @@ void ReadLidarSensors()
 
   bool stopForward = false;
   bool stopBackward = false;
+  int rangeMillis = 0;
 
   //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
   if ( _isFrontLidarOn )
@@ -916,6 +964,8 @@ void ReadLidarSensors()
     if (_front_LOX_Measure.RangeStatus != 4) 
     { // phase failures have incorrect data
       Serial.print("RedVal): "); Serial.println(_redValue);
+      rangeMillis = _front_LOX_Measure.RangeMilliMeter;
+      Serial.print("Front range is (mm): "); Serial.println(rangeMillis);
 
       if (_front_LOX_Measure.RangeMilliMeter < 300 ) 
       {
@@ -937,7 +987,7 @@ void ReadLidarSensors()
     } 
     else 
     {
-      Serial.println(" out of range ");
+      Serial.println(" front out of range ");
       _redValue = 0;
     }
   }
@@ -947,12 +997,16 @@ void ReadLidarSensors()
     _redValue = 0;
   }
 
+  rangeMillis = 0;
+  
   //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
   if ( _isRearLidarOn )
   {
     if (_rear_LOX_Measure.RangeStatus != 4) 
     { // phase failures have incorrect data
       Serial.print("RedVal): "); Serial.println(_redValue);
+      rangeMillis = _front_LOX_Measure.RangeMilliMeter;
+      Serial.print("Rear range is (mm): "); Serial.println(rangeMillis);
 
       if (_rear_LOX_Measure.RangeMilliMeter < 300 ) 
       {
@@ -974,7 +1028,7 @@ void ReadLidarSensors()
     } 
     else 
     {
-      Serial.println(" out of range ");
+      Serial.println(" rear out of range ");
       _redValue = 0;
     }
   }
@@ -1001,6 +1055,9 @@ void ReadLidarSensors()
   }
 }
 
+#pragma endregion LiDar
+
+#pragma region PS3
 void OnNotify()
 {
     //BlinkDebugLED(1);
@@ -1115,7 +1172,7 @@ void OnNotify()
 //     //  //turn off reverse (left side)
 //     //  ledcWrite(2, 0);
 //     //}
-// 	  //
+//    //
 //     //if ( rightX < -5 ) //the right joystick is being pushed to the left
 //     //{
 //     //  //turn on forward (right side)
@@ -1169,7 +1226,7 @@ void OnNotify()
       _isMovingForward = false;
       _isMovingBackward = false;
     }
-	
+  
     if ( _rightY < -5 ) //the joystick is being pushed forward
     {
       if ( !_isFrontObstacleDetected )
@@ -1220,4 +1277,4 @@ void OnConnect()
     FlashLightbar(BUILT_IN, 3, 0, 0, 255);
     digitalWrite(PIN_BT_CONNECTED_LED, LOW);
 }
-
+#pragma endregion PS3
