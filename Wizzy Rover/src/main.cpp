@@ -77,6 +77,7 @@
 
 enum Lightbar { FRONT, REAR, GROUND_EFFECT, FRONT_AND_REAR, BUILT_IN };
 enum Color { UNKNOWN, RED, WHITE, BLUE, GREEN };
+// Exercise 1: Add a custom color to the enum above
 
 Color _isRedWhiteOrBlue = RED;
 Color _nextColor = UNKNOWN;
@@ -159,6 +160,7 @@ void BlinkDebugLED(int BlinkXTimes);
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper = false);
 void Chaser(Color color, Lightbar LB, bool RandomTrailTaper = false);
 void ToggleLightbar(Lightbar LB, bool TurnOn = true, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
+void ToggleLightbar(Lightbar LB,  Color color, bool TurnOn = true);
 void ToggleLBDueToLight();
 void FlashLightbar(Lightbar LB, int numFlashes = 1, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
 bool IsRunningInDemoMode();
@@ -455,23 +457,7 @@ void BlinkDebugLED(int BlinkXTimes)
   delay(250);
 }
 
-// Helper method to take our color enum and create a 32-bit RGB color
-uint32_t ToRGB32(Color color)
-{
-  switch (color)
-  {
-    case RED:
-      return Adafruit_NeoPixel::Color(255, 0, 0);
-    case WHITE:
-      return Adafruit_NeoPixel::Color(255, 255, 255);
-    case BLUE:
-      return Adafruit_NeoPixel::Color(0, 0, 255);
-    case GREEN:
-      return Adafruit_NeoPixel::Color(0, 255, 0);
-    default: 
-      return Adafruit_NeoPixel::Color(255, 255, 255);
-  }
-}
+// Helper method to take our color enum and create an RGB value tuple
 std::tuple<uint8_t, uint8_t, uint8_t> ToRGB8(Color color){
   switch (color)
   {
@@ -711,6 +697,12 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
     delete [] colorB;
 }
 
+void ToggleLightbar(Lightbar LB, Color color, bool TurnOn)
+{
+  std::tuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
+  ToggleLightbar(LB, TurnOn, std::get<0>(rgb), std::get<1>(rgb), std::get<2>(rgb));
+}
+
 void ToggleLightbar(Lightbar LB, bool TurnOn, uint8_t R, uint8_t G, uint8_t B)
 {
     // default color is WHITE
@@ -806,8 +798,10 @@ void FlashLightbar(Lightbar LB, int numFlashes, uint8_t R, uint8_t G, uint8_t B)
 }
 void FlashLightbar(Lightbar LB, int numFlashes, Color color)
 {
-  FlashLightbar(LB, numFlashes, ToRGB32(color));
+  std::tuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
+  FlashLightbar(LB, numFlashes, std::get<0>(rgb), std::get<1>(rgb), std::get<2>(rgb));
 }
+
 void FlashLightbar(Lightbar LB, int numFlashes, uint32_t color)
 {
   // turn desired LB on and then back off to flash it
