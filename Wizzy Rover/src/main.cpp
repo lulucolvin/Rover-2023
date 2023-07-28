@@ -847,7 +847,7 @@ void SetupLidarSensors()
   // initing front
   if ( !_isFrontLidarOn )
   {
-    if(!_frontLox.begin(FRONT_FACING_LOX_I2C_ADDR)) 
+    if(!_frontLox.begin(FRONT_FACING_LOX_I2C_ADDR, true)) 
     {
       FlashBuiltInLEDs(1, 255, 255, 0); //yellow
       Serial.println(F("Failed to boot first VL53L0X"));
@@ -899,8 +899,8 @@ void ReadLidarSensors()
 
   if ( !_isFrontLidarOn || !_isRearLidarOn ) SetupLidarSensors();
 
-  if ( _isFrontLidarOn ) _frontLox.rangingTest(&_front_LOX_Measure, false); // pass in 'true' to get debug data printout!
-  if ( _isRearLidarOn ) _rearLox.rangingTest(&_rear_LOX_Measure, false);   // pass in 'true' to get debug data printout!
+  if ( _isFrontLidarOn ) _frontLox.rangingTest(&_front_LOX_Measure, true); // pass in 'true' to get debug data printout!
+  if ( _isRearLidarOn ) _rearLox.rangingTest(&_rear_LOX_Measure, true);   // pass in 'true' to get debug data printout!
 
   //Serial.print("Reading a measurement... ");
   //_FrontLox.rangingTest(&measure, false); // pass in 'true' to get debug data printout!
