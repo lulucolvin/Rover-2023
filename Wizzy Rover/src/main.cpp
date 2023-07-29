@@ -51,7 +51,7 @@
 #include <Ps3Controller.h>
 //#include <esp32-hal-ledc.h>
 #include "Adafruit_VL53L0X.h"
-#include <tuple>
+#include "microTuple.h"
 
 #ifndef __ESP32__
 #define __ESP32__
@@ -169,7 +169,7 @@ void BlinkDebugLED(int BlinkXTimes);
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper = false);
 void Chaser(Color color, Lightbar LB, bool RandomTrailTaper = false);
 void ToggleLightbar(Lightbar LB, bool TurnOn = true, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
-void ToggleLightbar(Lightbar LB,  Color color, bool TurnOn = true);
+void ToggleLightbar(Lightbar LB, Color color, bool TurnOn = true);
 void ToggleLBDueToLight();
 void FlashLightbar(Lightbar LB, int numFlashes = 1, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
 bool IsRunningInDemoMode();
@@ -198,13 +198,25 @@ void setup()
   // for debug
   Chaser(BLUE, FRONT_AND_REAR);
   Chaser(BLUE, GROUND_EFFECT);
+  Serial.println("Chaser methods run");
+  //ToggleLightbar(BUILT_IN, GREEN);
+  //ToggleLightbar(REAR, GREEN);
+  //ToggleLightbar(FRONT, GREEN);
+  delay(1000);
+  //ToggleLightbar(FRONT_AND_REAR, RED);
+  //ToggleLightbar(BUILT_IN, RED);
+  ToggleLightbar(GROUND_EFFECT, GREEN);
+  // ToggleLightbar(REAR, RED, true);
+  //  ToggleLightbar(FRONT, RED, true);
+  ToggleLightbar(GROUND_EFFECT, RED, true);
 
   Ps3.attach(OnNotify);
   Ps3.attachOnConnect(OnConnect);
+   Serial.println("RAN PS3 METHOD 2");
   Ps3.begin(_ps3MacAddr);
-
+ Serial.println("RAN PS3 METHOD 3");
   SetupLidarSensors();
-
+ Serial.println("RAN LIDAR METHOD");
   delay(1000);
 
   _loopsBetweenBlinks = (LOOPS_BETWEEN_BLINKS + 1);
@@ -237,24 +249,10 @@ void loop()
     }
 
     Chaser(BLUE, BUILT_IN);
-
-    // if( Ps3.isConnected())
-    // {
-    //   FlashBuiltInLEDs(3, 0, 0, 255);
-    // }
-    // else
-    // { 
-    //   FlashBuiltInLEDs(3, 255, 0, 0);
-    // }
-    // Ps3.begin(_ps3MacAddr);
-    // delay(2000);
   }
   else
   {
     digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-
-    FlashLightbar(BUILT_IN);
-    delay(125);
 
     ReadLidarSensors();
 
@@ -263,7 +261,7 @@ void loop()
     if ( _didCircleChange )
     {
       //TurnOnFrontLightbar(true);
-      ToggleLightbar(FRONT, true);
+      //SToggleLightbar(FRONT, true);
       _didCircleChange = false;
     }
     // //if(Ps3.event.analog_changed.button.circle)
@@ -296,12 +294,12 @@ void loop()
         uint8_t red = random(1, 256);
         uint8_t green = random(1, 256);
         uint8_t blue = random(1, 256);
-        ToggleLightbar(REAR, red, green, blue);
+        ToggleLightbar(REAR, true, red, green, blue);
       }
       else
       {
         _isRearLBOn = false;
-        ToggleLightbar(REAR);
+        ToggleLightbar(REAR, false);
       }
 
       _didSquareChange = false;
@@ -480,28 +478,44 @@ void BlinkDebugLED(int BlinkXTimes)
   }
   delay(250);
 }
-
-// Helper method to take our color enum and create an RGB value tuple
-std::tuple<uint8_t, uint8_t, uint8_t> ToRGB8(Color color){
+uint32_t ToRGB(Color color){
   switch (color)
   {
     case RED:
-      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 0, 0);
+      return Adafruit_NeoPixel::Color(255, 0, 0);
     case WHITE:
-      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 255, 255);
+    Serial.println("received white color");
+      return Adafruit_NeoPixel::Color(255, 255, 255);
     case BLUE:
-      return std::tuple<uint8_t, uint8_t, uint8_t>(0, 0, 255);
+      return Adafruit_NeoPixel::Color(0, 0, 255);
     case GREEN:
-      return std::tuple<uint8_t, uint8_t, uint8_t>(0, 255, 0);
+      return Adafruit_NeoPixel::Color(0, 255, 0);
     default: 
-      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 255, 255);
+      return Adafruit_NeoPixel::Color(255, 255, 255);
+  }
+}
+// Helper method to take our color enum and create an RGB value tuple
+MicroTuple<uint8_t, uint8_t, uint8_t> ToRGB8(Color color){
+  switch (color)
+  {
+    case RED:
+      return MicroTuple<uint8_t, uint8_t, uint8_t>(255, 0, 0);
+    case WHITE:
+    Serial.println("received white color");
+      return MicroTuple<uint8_t, uint8_t, uint8_t>(255, 255, 255);
+    case BLUE:
+      return MicroTuple<uint8_t, uint8_t, uint8_t>(0, 0, 255);
+    case GREEN:
+      return MicroTuple<uint8_t, uint8_t, uint8_t>(0, 255, 0);
+    default: 
+      return MicroTuple<uint8_t, uint8_t, uint8_t>(255, 255, 255);
   }
 }
 
 void Chaser(Color color, Lightbar LB, bool RandomTrailTaper)
 {
-  std::tuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
-  Chaser(std::get<0>(rgb), std::get<1>(rgb), std::get<2>(rgb), LB, RandomTrailTaper);
+  MicroTuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
+  Chaser(rgb.get<0>(), rgb.get<1>(), rgb.get<2>(), LB, RandomTrailTaper);
 }
 
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
@@ -529,7 +543,7 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
 
     int firstPixel = 0;
     int numberOfPixels;
-    Adafruit_NeoPixel* bar = &_groundEffectLB;
+    Adafruit_NeoPixel* bar;
 
     switch (LB)
     {
@@ -723,11 +737,14 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
 
 void ToggleLightbar(Lightbar LB, Color color, bool TurnOn)
 {
-  std::tuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
-  ToggleLightbar(LB, TurnOn, std::get<0>(rgb), std::get<1>(rgb), std::get<2>(rgb));
+  ToggleLightbar(LB, TurnOn, ToRGB(color));
 }
 
 void ToggleLightbar(Lightbar LB, bool TurnOn, uint8_t R, uint8_t G, uint8_t B)
+{
+  ToggleLightbar(LB, TurnOn, Adafruit_NeoPixel::Color(R, G, B));
+}
+void ToggleLightbar(Lightbar LB, bool TurnOn, uint32_t color)
 {
     // default color is WHITE
     Adafruit_NeoPixel *bar;
@@ -789,7 +806,7 @@ void ToggleLightbar(Lightbar LB, bool TurnOn, uint8_t R, uint8_t G, uint8_t B)
     {
         for(int i=firstPixel; i < numberOfPixels; i++)
         {
-          bar->setPixelColor(i, bar->Color(R, G, B));
+          bar->setPixelColor(i, color);
         }
     }
     bar->show();
@@ -798,32 +815,14 @@ void ToggleLightbar(Lightbar LB, bool TurnOn, uint8_t R, uint8_t G, uint8_t B)
     if ( turnOffLBSw ) digitalWrite(PIN_FLB_SWITCH, LOW);
 }
 
-void TurnBuiltInsOn()
-{
-  _builtInLEDs.clear();
-  _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(30, 144, 255));   //dodger blue
-  _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(255, 140, 0));   //dark orange
-  _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(30, 144, 255));
-  _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(255, 140, 0));
-  _builtInLEDs.show();
-  _areBuiltInsOn = true;
-}
-
-void TurnBuiltInsOff()
-{
-  _builtInLEDs.clear();
-  _builtInLEDs.show();
-  _areBuiltInsOn = false;
-}  
-
 void FlashLightbar(Lightbar LB, int numFlashes, uint8_t R, uint8_t G, uint8_t B)
 {
  FlashLightbar(LB, numFlashes, Adafruit_NeoPixel::Color(R, G, B));
 }
 void FlashLightbar(Lightbar LB, int numFlashes, Color color)
 {
-  std::tuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
-  FlashLightbar(LB, numFlashes, std::get<0>(rgb), std::get<1>(rgb), std::get<2>(rgb));
+  MicroTuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
+  FlashLightbar(LB, numFlashes, rgb.get<0>(), rgb.get<1>(), rgb.get<2>());
 }
 
 void FlashLightbar(Lightbar LB, int numFlashes, uint32_t color)
@@ -915,7 +914,7 @@ void SetupLidarSensors()
   {
     if(!_rearLox.begin(REAR_FACING_LOX_I2C_ADDR)) 
     {
-      FlashLightbar(BUILT_IN, 1, 0, 255, 0); //green
+      FlashLightbar(BUILT_IN, 1, GREEN); //green
       Serial.println(F("Failed to boot rear VL53L0X"));
       _isRearLidarOn = false;
     }
@@ -1061,7 +1060,7 @@ void ReadLidarSensors()
 void OnNotify()
 {
     //BlinkDebugLED(1);
-
+  Serial.println("entered OnNotify..");
     _leftX = (Ps3.data.analog.stick.lx);
     _leftY = (Ps3.data.analog.stick.ly);
     _rightX = (Ps3.data.analog.stick.rx);
