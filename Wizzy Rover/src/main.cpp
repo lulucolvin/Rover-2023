@@ -28,6 +28,7 @@
                      on the issue detected
   07.20.23 DJP - Changed front & rear lightbars to function as one lightbar
   07.20.23 DJP - Added ground effect lightbars as part of the standard rover startup
+  07.28.23 DJP - Finished testing code changes for Wizzy Rover Camp 2023
 */
 #pragma endregion Code Hx / Change Log
 
@@ -42,7 +43,7 @@
 //  pio run --target upload
 //  pio run --target upload --upload-port com5
 //
-// MAKE CERTAIN YOUR TERMINAL WINDOW IS IN THE CORRECT DIRECTORY...ie C:\Users\perkins\Documents\PlatformIO\Projects\ACBR RGB One
+// MAKE CERTAIN YOUR TERMINAL WINDOW IS IN THE CORRECT DIRECTORY ..\PlatformIO\Projects\Rover-2023\Wizzy Rover
 //     if not, use the cd command via the PS prompt to change
 
 #include <Arduino.h>            // Arduino Framework
@@ -51,24 +52,25 @@
 #include <Ps3Controller.h>
 //#include <esp32-hal-ledc.h>
 #include "Adafruit_VL53L0X.h"
-
+#include <tuple>
 
 #ifndef __ESP32__
 #define __ESP32__
 #endif
 
-#define NUMPIXELS             4     // We have 4 LEDs on the board
+#define NUM_PIXELS_ON_DB      4     // We have 4 LEDs on the driver board (DB) (with the LEDs facing you, index 3 is upper left, index 2 is lower left, index 1 is upper right, and index 0 is lower right)
 #define NUM_PIXELS_ON_FLB     6     // We have 6 LEDs on the front lightbar (FLB)
 #define NUM_PIXELS_ON_RLB     6     // We have 6 LEDs on the rear lightbar (RLB)
-#define NUM_PIXELS_ON_GELB    12    // 6 on each LB
+#define NUM_PIXELS_ON_GELB    12    // We have 6 LEDs on each ground effect lightbar (GELB)
 
-#define PIN_RESERVED1         12    // motor 2
-#define PIN_RESERVED2         13    // motor 1
+//The PIN_MOTOR* are reserved pins; they are on our chip that we're connecting to our ESP32 through our circuit board!
+#define PIN_MOTOR2            12    // RESERVED for motor 2
+#define PIN_MOTOR1            13    // RESERVED for motor 1
 #define PIN_FLB_SWITCH        14    // Flips the transistor switch on/off (high is on, closes the circuit)
 #define PIN_AVAIL_1           15    // Not currently used
-#define PIN_RESERVED3         16    // motor 3
-#define PIN_RESERVED4         17    // motor 4
-#define PIN_PIXELS            18    // Our LEDs are hardwired to pin 18
+#define PIN_MOTOR3            16    // RESERVED for motor 3
+#define PIN_MOTOR4            17    // RESERVED for motor 4
+#define PIN_PIXELS_DB         18    // Driver board LEDs are hardwired to pin 18
 #define PIN_BUZZER            19    // The buzzer is hardwired to pin 19
 #define PIN_AVAIL_2           20    // Not currently used
 #define PIN_SDA_FLOX          21    // LiDar data pin
@@ -85,6 +87,7 @@
 
 enum Lightbar { FRONT, REAR, GROUND_EFFECT, FRONT_AND_REAR, BUILT_IN };
 enum Color { UNKNOWN, RED, WHITE, BLUE, GREEN };
+// Exercise 1: Add a custom color to the enum above
 
 Color _isRedWhiteOrBlue = RED;
 Color _nextColor = UNKNOWN;
@@ -105,7 +108,8 @@ int _rightY = 0;
 int _leftX = 0;
 int _leftY = 0;
 
-int _redValue = 0;
+int _frontRedValue = 0;
+int _rearRedValue = 0;
 
 int _color = 1;
 
@@ -113,7 +117,7 @@ int _color = 1;
 //char _ps3MacAddr[20] = { "01:02:03:04:05:06" };
 //char _ps3MacAddr[20] = { "21:02:03:04:05:02"}; //2021 class
 //char _ps3MacAddr[20] = { "23:07:31:04:05:01"}; //2023 class
-char _ps3MacAddr[20] = {"23:07:31:04:05:01"}; //2022 class
+char _ps3MacAddr[20] = {"21:02:03:04:05:02"}; //2022 class
 
 uint8_t _lbBrightness = 128;
 const uint8_t MAX_LB_BRIGHTNESS = 255;
@@ -146,13 +150,14 @@ bool _isPS3_L2_Pressed = false;
 bool _showGroundEffect = false;
 bool _keepFLBDemoStrobeOn = false;
 int _loopsBetweenBlinks = 0;
+bool _showPS3Connection = true;
 
 
 // Set up some variables for the light level: a calibration value and and a raw light value
 int _lightCal;
 int _lightVal;
 
-Adafruit_NeoPixel _builtInLEDs(NUMPIXELS, PIN_PIXELS, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel _builtInLEDs(NUM_PIXELS_ON_DB, PIN_PIXELS_DB, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel _frontLightbar((NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB), PIN_PIXELS_FLB, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel _groundEffectLB(NUM_PIXELS_ON_GELB, PIN_PIXELS_GELB, NEO_GRB + NEO_KHZ800);
 
@@ -162,45 +167,27 @@ Adafruit_VL53L0X _rearLox = Adafruit_VL53L0X();
 VL53L0X_RangingMeasurementData_t _front_LOX_Measure;
 VL53L0X_RangingMeasurementData_t _rear_LOX_Measure;
 
+// LED related methods
+void SetupLightbars();
 void BlinkDebugLED(int BlinkXTimes);
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper = false);
-void Chaser(Color color, Lightbar LB);
+void Chaser(Color color, Lightbar LB, bool RandomTrailTaper = false);
 void ToggleLightbar(Lightbar LB, bool TurnOn = true, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
+void ToggleLightbar(Lightbar LB,  Color color, bool TurnOn = true);
 void ToggleLBDueToLight();
-void TurnBuiltInsOn();
-void TurnBuiltInsOff();
-void FlashBuiltInLEDs(int numFlashes = 1, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
+void FlashLightbar(Lightbar LB, int numFlashes = 1, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
 bool IsRunningInDemoMode();
+
+// LiDar sensor related methods
 void SetupLidarSensors();
 void ReadLidarSensors();
+
+// PS3 related methods
 void OnNotify();
 void OnConnect();
-void SetupLightbars();
+
 void SetupMotors();
 void SetupPins();
-void setup_Test();
-void loop_Test();
-
-void setup_Test()
-{
-  Serial.begin(115200);
-
-  pinMode(PIN_BT_CONNECTED_LED, OUTPUT);  //pin 26
-  pinMode(PIN_DEBUG_LED, OUTPUT);         //pin 32
-
-  digitalWrite(PIN_DEBUG_LED, HIGH);
-  digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-  delay(500);
-  
-  SetupLidarSensors();
-
-  delay(1000);
-}
-
-void loop_Test()
-{
-    ReadLidarSensors();
-}
 
 void setup()
 {
@@ -215,20 +202,11 @@ void setup()
   // for debug
   Chaser(BLUE, FRONT_AND_REAR);
   Chaser(BLUE, GROUND_EFFECT);
+  Chaser(BLUE, BUILT_IN);
 
   Ps3.attach(OnNotify);
   Ps3.attachOnConnect(OnConnect);
   Ps3.begin(_ps3MacAddr);
-
-#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__) || defined(__AVR_ATmega1280__) 
-  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
-#endif
-#if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__) 
-  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
-#endif
-#if defined(__ESP32__)
-  _lightCal = 1600;
-#endif
 
   SetupLidarSensors();
 
@@ -240,7 +218,7 @@ void setup()
 }
 
 void loop()
-{
+{  
   if ( _loopsBetweenBlinks > LOOPS_BETWEEN_BLINKS )
   {
     _loopsBetweenBlinks = 0;
@@ -254,6 +232,7 @@ void loop()
   if ( !Ps3.isConnected() )
   {
     Serial.println("No PS3 controller connected...");
+    _showPS3Connection = true;
     
     for ( int j = 0; j < 3; j++ )
     {
@@ -278,16 +257,16 @@ void loop()
   }
   else
   {
+    if ( _showPS3Connection ) { Serial.println("PS3 CONNECTED..."); _showPS3Connection = false; }
+
     digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
 
-    //FlashBuiltInLEDs(1, 255, 255, 255);
+    //FlashLightbar(BUILT_IN);
     delay(125);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
 
     ReadLidarSensors();
 
-    delay(1);
+    delay(100);
 
     if ( _didCircleChange )
     {
@@ -348,8 +327,8 @@ void loop()
       {
         if ( _showGroundEffect ) ToggleLightbar(GROUND_EFFECT);
 
-        if ( _areBuiltInsOn ) TurnBuiltInsOff(); 
-        else                  TurnBuiltInsOn();
+        if ( _areBuiltInsOn ) ToggleLightbar(BUILT_IN); 
+        else                  ToggleLightbar(BUILT_IN, false);
       }
 
       _didL2Change = false;
@@ -366,15 +345,11 @@ void loop()
 
       if ( _useLiDar ) 
       {
-        FlashBuiltInLEDs();
-        delay(200);
-        FlashBuiltInLEDs(1, 0, 0, 0);
+        FlashLightbar(BUILT_IN);
       }
       else
       {
-        FlashBuiltInLEDs(1, 255, 0, 0);
-        delay(200);
-        FlashBuiltInLEDs(1, 0, 0, 0);
+        FlashLightbar(BUILT_IN, 1, 255, 0, 0);
       }
       delay(125);
       _builtInLEDs.clear();
@@ -445,6 +420,17 @@ void SetupLightbars()
   // set brightness lower when we want to conserve battery
   _lbBrightness = 128;
   _frontLightbar.setBrightness(_lbBrightness); 
+
+  //light sensor calibration
+  #if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__) || defined(__AVR_ATmega1280__) 
+  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
+#endif
+#if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__) 
+  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
+#endif
+#if defined(__ESP32__)
+  _lightCal = 1600;
+#endif
 }
 #pragma endregion Setup Helper Methods
 
@@ -503,45 +489,32 @@ void BlinkDebugLED(int BlinkXTimes)
   delay(250);
 }
 
-void Chaser(Color color, Lightbar LB)
-{
-  //default color is WHITE
-  uint8_t R = 255;
-  uint8_t G = 255;
-  uint8_t B = 255;
-
+// Helper method to take our color enum and create an RGB value tuple
+std::tuple<uint8_t, uint8_t, uint8_t> ToRGB8(Color color){
   switch (color)
   {
     case RED:
-    {
-      G = 0;
-      B = 0;
-      break;
-    }
-    case GREEN:
-    {
-      R = 0;
-      B = 0;
-      break;
-    }
+      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 0, 0);
+    case WHITE:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 255, 255);
     case BLUE:
-    {
-      R = 0;
-      G = 0;
-      break;
-    }
-    default:
-    {
-      break;
-    }
+      return std::tuple<uint8_t, uint8_t, uint8_t>(0, 0, 255);
+    case GREEN:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(0, 255, 0);
+    default: 
+      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 255, 255);
   }
+}
 
-  Chaser(R, G, B, LB);
+void Chaser(Color color, Lightbar LB, bool RandomTrailTaper)
+{
+  std::tuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
+  Chaser(std::get<0>(rgb), std::get<1>(rgb), std::get<2>(rgb), LB, RandomTrailTaper);
 }
 
 void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
-{  
-#pragma Region Code To Consider
+{
+#pragma region Code To Consider
 
     //the following code was from StrobeLightbar()...it set the switch vs. turning the lightbar on directly...that needs to be coded here
     // _frontLightbar.clear();
@@ -560,7 +533,7 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
 
     // //BlinkDebugLED(5);
     // _isStrobeOn = false;
-#pragma EndRegion Code To Consider
+#pragma endregion Code To Consider
 
     int firstPixel = 0;
     int numberOfPixels;
@@ -596,7 +569,7 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
       case BUILT_IN:
       {
         bar = &_builtInLEDs;
-        numberOfPixels = NUMPIXELS;
+        numberOfPixels = NUM_PIXELS_ON_DB;
         break;
       }
       default:
@@ -754,6 +727,15 @@ void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
     delete [] colorR;
     delete [] colorG;
     delete [] colorB;
+
+    bar->clear();
+    bar->show();
+}
+
+void ToggleLightbar(Lightbar LB, Color color, bool TurnOn)
+{
+  std::tuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
+  ToggleLightbar(LB, TurnOn, std::get<0>(rgb), std::get<1>(rgb), std::get<2>(rgb));
 }
 
 void ToggleLightbar(Lightbar LB, bool TurnOn, uint8_t R, uint8_t G, uint8_t B)
@@ -797,6 +779,12 @@ void ToggleLightbar(Lightbar LB, bool TurnOn, uint8_t R, uint8_t G, uint8_t B)
             else { turnOffLBSw = true; }
             break;
           }
+        case BUILT_IN:
+        {
+          bar = &_builtInLEDs;
+          numberOfPixels = NUM_PIXELS_ON_DB;
+          break;
+        }
         default:
           {
             bar = &_frontLightbar;
@@ -839,17 +827,23 @@ void TurnBuiltInsOff()
   _areBuiltInsOn = false;
 }  
 
-void FlashBuiltInLEDs(int numFlashes, uint8_t R, uint8_t G, uint8_t B)
+void FlashLightbar(Lightbar LB, int numFlashes, uint8_t R, uint8_t G, uint8_t B)
 {
-  for(int i = 0; i < numFlashes; i++)
+ FlashLightbar(LB, numFlashes, Adafruit_NeoPixel::Color(R, G, B));
+}
+void FlashLightbar(Lightbar LB, int numFlashes, Color color)
+{
+  std::tuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
+  FlashLightbar(LB, numFlashes, std::get<0>(rgb), std::get<1>(rgb), std::get<2>(rgb));
+}
+
+void FlashLightbar(Lightbar LB, int numFlashes, uint32_t color)
+{
+  // turn desired LB on and then back off to flash it
+  for(int i=0; i< numFlashes; i++)
   {
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.show();
-    delay(200);
+    ToggleLightbar(LB, true, color);
+    ToggleLightbar(LB, false);
   }
 }
 
@@ -882,8 +876,6 @@ void SetupLidarSensors()
 
   if ( !_useLiDar ) return;
 
-  //FlashBuiltInLEDs(); //white
-
   Serial.println("Resetting LiDar sensors...");
 
   // reset both front & rear lidar
@@ -901,17 +893,15 @@ void SetupLidarSensors()
 
   Serial.println("LiDar sensors are ready...");
 
-  //FlashBuiltInLEDs(1, 255, 0, 0); //red
-
   Serial.print("Call begin on front LOX? ");
   Serial.println(_isFrontLidarOn);
 
   // initing front
   if ( !_isFrontLidarOn )
   {
-    if(!_frontLox.begin(FRONT_FACING_LOX_I2C_ADDR)) 
+    if(!_frontLox.begin(FRONT_FACING_LOX_I2C_ADDR, true)) 
     {
-      FlashBuiltInLEDs(1, 255, 255, 0); //yellow
+      FlashLightbar(BUILT_IN, 1, 255, 255, 0); //yellow
       Serial.println(F("Failed to boot first VL53L0X"));
       _isFrontLidarOn = false;
     }
@@ -922,8 +912,6 @@ void SetupLidarSensors()
     }
     delay(50);
     }
-
-  //FlashBuiltInLEDs(1, 0, 0, 255); //blue
 
   // activating rear
   //digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
@@ -938,7 +926,7 @@ void SetupLidarSensors()
   {
     if(!_rearLox.begin(REAR_FACING_LOX_I2C_ADDR)) 
     {
-      FlashBuiltInLEDs(1, 0, 255, 0); //green
+      FlashLightbar(BUILT_IN, 1, 0, 255, 0); //green
       Serial.println(F("Failed to boot rear VL53L0X"));
       _isRearLidarOn = false;
     }
@@ -959,12 +947,8 @@ void ReadLidarSensors()
     _isRearObstacleDetected = false;
     return;
   }
-  //else
-  //{
-  //  BlinkDebugLED(3);
-  //}
 
-  Serial.print("LiDar is ready (Front:Rear): ");
+  Serial.print("Is LiDar ready (Front:Rear)? ");
   Serial.print(_isFrontLidarOn);
   Serial.print(":");
   Serial.println(_isRearLidarOn);
@@ -978,12 +962,10 @@ void ReadLidarSensors()
   //_FrontLox.rangingTest(&measure, false); // pass in 'true' to get debug data printout!
   if ( !_areBuiltInsOn )
   {
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(_redValue, 0, 0));   
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(_redValue, 0, 0));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(_redValue, 0, 0));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(_redValue, 0, 0));
-    _builtInLEDs.show();
+    //if either are on, turn on the red leds
+    int redValue = (_frontRedValue + _rearRedValue) > 255 ? 255 : (_frontRedValue + _rearRedValue);
+
+    ToggleLightbar(BUILT_IN, true, redValue, 0, 0);
   }
 
   bool stopForward = false;
@@ -993,9 +975,10 @@ void ReadLidarSensors()
   //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
   if ( _isFrontLidarOn )
   {
+    Serial.print("Reading Front LiDar....");
     if (_front_LOX_Measure.RangeStatus != 4) 
     { // phase failures have incorrect data
-      Serial.print("RedVal): "); Serial.println(_redValue);
+      Serial.print("Front RedVal: "); Serial.println(_frontRedValue);
       rangeMillis = _front_LOX_Measure.RangeMilliMeter;
       Serial.print("Front range is (mm): "); Serial.println(rangeMillis);
 
@@ -1005,28 +988,30 @@ void ReadLidarSensors()
         if (_front_LOX_Measure.RangeMilliMeter <= 250) //within 7 1/2", 200 is 7 3/4"
         {
           stopForward = true;
-          _redValue = 255;
+          _frontRedValue = 255;
         }
-        else if ( _redValue < 255)
+        else if ( _frontRedValue < 255)
         {
-          _redValue+=5;
+          _frontRedValue+=5;
         }
       }
-      else if(_front_LOX_Measure.RangeMilliMeter > 300 && _redValue > 0)  //300mm is 11.811"
+      else if(_front_LOX_Measure.RangeMilliMeter > 300 && _frontRedValue > 0)  //300mm is 11.811"
       {
-        _redValue-=5;
+        //_frontRedValue-=5;
+        Serial.println("Nothing close to front LiDar ");
+        _frontRedValue = 0;
       }
     } 
     else 
     {
       Serial.println(" front out of range ");
-      _redValue = 0;
+      _frontRedValue = 0;
     }
   }
   else 
   {
     Serial.println(" front lox is off ");
-    _redValue = 0;
+    _frontRedValue = 0;
   }
 
   rangeMillis = 0;
@@ -1034,9 +1019,10 @@ void ReadLidarSensors()
   //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
   if ( _isRearLidarOn )
   {
+    Serial.print("Reading Rear LiDar....");
     if (_rear_LOX_Measure.RangeStatus != 4) 
     { // phase failures have incorrect data
-      Serial.print("RedVal): "); Serial.println(_redValue);
+      Serial.print("Rear RedVal: "); Serial.println(_rearRedValue);
       rangeMillis = _front_LOX_Measure.RangeMilliMeter;
       Serial.print("Rear range is (mm): "); Serial.println(rangeMillis);
 
@@ -1046,32 +1032,37 @@ void ReadLidarSensors()
         if (_rear_LOX_Measure.RangeMilliMeter <= 250) //within 7 1/2", 200 is 7 3/4"
         {
           stopBackward = true;
-          _redValue = 255;
+          _rearRedValue = 255;
         }
-        else if ( _redValue < 255)
+        else if ( _rearRedValue < 255)
         {
-          _redValue+=5;
+          _rearRedValue+=5;
         }
       }
-      else if(_rear_LOX_Measure.RangeMilliMeter > 300 && _redValue > 0)  //300mm is 11.811"
+      else if(_rear_LOX_Measure.RangeMilliMeter > 300 && _rearRedValue > 0)  //300mm is 11.811"
       {
-        _redValue-=5;
+        //_rearRedValue-=5;
+        Serial.println("Nothing close to rear LiDar ");
+        _rearRedValue = 0;
       }
     } 
     else 
     {
       Serial.println(" rear out of range ");
-      _redValue = 0;
+      _rearRedValue = 0;
     }
   }
   else 
   {
     Serial.println(" rear lox is off ");
-    _redValue = 0;
+    _rearRedValue = 0;
   }
 
   _isFrontObstacleDetected = stopForward;
   _isRearObstacleDetected = stopBackward;
+
+  Serial.print("Front obstacle detected? "); Serial.println((_isFrontObstacleDetected ? "TRUE" : "FALSE"));
+  Serial.print("Rear obstacle detected? "); Serial.println((_isRearObstacleDetected ? "TRUE" : "FALSE"));
 
   if ( (stopForward && _isMovingForward) || (stopBackward && _isMovingBackward) )
   {       
@@ -1306,32 +1297,7 @@ void OnNotify()
 void OnConnect()
 {
     digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(2000);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
-    //digitalWrite(PIN_BT_CONNECTED_LED, LOW);
-
-    //the following line needs to be tested
-    Ps3.setRumble(100.0, 250);
+    FlashLightbar(BUILT_IN, 3, 0, 0, 255);
+    digitalWrite(PIN_BT_CONNECTED_LED, LOW);
 }
 #pragma endregion PS3
