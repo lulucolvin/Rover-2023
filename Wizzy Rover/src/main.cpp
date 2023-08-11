@@ -29,6 +29,9 @@
   07.20.23 DJP - Changed front & rear lightbars to function as one lightbar
   07.20.23 DJP - Added ground effect lightbars as part of the standard rover startup
   07.28.23 DJP - Finished testing code changes for Wizzy Rover Camp 2023
+  08.03.23 DJP - Added PS4 support
+  08.05.23 DJP - Changed event time from 150ms to 250ms to resolve a button pressed timing issue
+  08.05.23 DJP - Rover gets laxed/sluggish in response to PS4 controller requests, adding a high gain antenna does resolve this issue
 */
 #pragma endregion Code Hx / Change Log
 
@@ -49,7 +52,11 @@
 #include <Arduino.h>            // Arduino Framework
 #include <Adafruit_NeoPixel.h>
 //#include <Tone32.h>
-#include <Ps3Controller.h>
+
+#include <ps4.h>
+#include <PS4Controller.h>
+#include <ps4_int.h>
+
 //#include <esp32-hal-ledc.h>
 #include "Adafruit_VL53L0X.h"
 #include <tuple>
@@ -73,8 +80,8 @@
 #define PIN_PIXELS_DB         18    // Driver board LEDs are hardwired to pin 18
 #define PIN_BUZZER            19    // The buzzer is hardwired to pin 19
 #define PIN_AVAIL_2           20    // Not currently used
-#define PIN_SDA_FLOX          21    // LiDar data pin
-#define PIN_SCL_FLOX          22    // LiDar clock pin
+#define PIN_SDA_LOX           21    // LiDar data pin
+#define PIN_SCL_LOX           22    // LiDar clock pin
 #define PIN_PIXELS_GELB       23    // Ground effect LB's
 #define PIN_UNKNOWN           24    // Not defined on board
 #define PIN_XSHUT_REAR_LOX    25    // shutdown pin for rear facing LOX
@@ -86,7 +93,7 @@
 #define PIN_PHOTORESISTOR     35    // Reads the photoresistor analog value
 
 enum Lightbar { FRONT, REAR, GROUND_EFFECT, FRONT_AND_REAR, BUILT_IN };
-enum Color { UNKNOWN, RED, WHITE, BLUE, GREEN };
+enum Color { UNKNOWN, RED, WHITE, BLUE, GREEN, YELLOW, ORANGE, LIGHTBLUE };
 // Exercise 1: Add a custom color to the enum above
 
 Color _isRedWhiteOrBlue = RED;
@@ -117,7 +124,7 @@ int _color = 1;
 //char _ps3MacAddr[20] = { "01:02:03:04:05:06" };
 //char _ps3MacAddr[20] = { "21:02:03:04:05:02"}; //2021 class
 //char _ps3MacAddr[20] = { "23:07:31:04:05:01"}; //2023 class
-char _ps3MacAddr[20] = {"21:02:03:04:05:02"}; //2022 class
+char _ps4MacAddr[20] = {"23:08:03:04:05:19"};
 
 uint8_t _lbBrightness = 128;
 const uint8_t MAX_LB_BRIGHTNESS = 255;
@@ -138,20 +145,23 @@ bool _didTriangleChange = false;
 bool _didCrossChange = false;
 bool _didSquareChange = false;
 bool _isTestingLEDsOnly = false;
-bool _useLiDar = true;
+bool _useLiDar = false;
 bool _isFrontLidarOn = false;
 bool _isRearLidarOn = false;
 bool _didL1Change = false;
 bool _didR1Change = false;
 bool _didL2Change = false;
-bool _isPS3_L1_Pressed = false;
-bool _isPS3_R1_Pressed = false;
-bool _isPS3_L2_Pressed = false;
+bool _didR2Change = false;
+bool _isPS4_L1_Pressed = false;
+bool _isPS4_R1_Pressed = false;
+bool _isPS4_R2_Pressed = false;
+bool _isPS4_L2_Pressed = false;
 bool _showGroundEffect = false;
 bool _keepFLBDemoStrobeOn = false;
 int _loopsBetweenBlinks = 0;
-bool _showPS3Connection = true;
-
+bool _showPS4Connection = true;
+bool _movementRequested = false;
+bool _wasPSButtonPressed = false;
 
 // Set up some variables for the light level: a calibration value and and a raw light value
 int _lightCal;
@@ -182,10 +192,6 @@ bool IsRunningInDemoMode();
 void SetupLidarSensors();
 void ReadLidarSensors();
 
-// PS3 related methods
-void OnNotify();
-void OnConnect();
-
 void SetupMotors();
 void SetupPins();
 
@@ -197,6 +203,8 @@ void setup()
   SetupLightbars();
   SetupMotors();
 
+  ToggleLightbar(GROUND_EFFECT, YELLOW, true);
+
   digitalWrite(PIN_DEBUG_LED, HIGH);
   
   // for debug
@@ -204,9 +212,7 @@ void setup()
   Chaser(BLUE, GROUND_EFFECT);
   Chaser(BLUE, BUILT_IN);
 
-  Ps3.attach(OnNotify);
-  Ps3.attachOnConnect(OnConnect);
-  Ps3.begin(_ps3MacAddr);
+  InitializePS4();
 
   SetupLidarSensors();
 
@@ -229,10 +235,10 @@ void loop()
     _loopsBetweenBlinks++;
   }
 
-  if ( !Ps3.isConnected() )
+  if ( !PS4.isConnected() )
   {
-    Serial.println("No PS3 controller connected...");
-    _showPS3Connection = true;
+    Serial.println("No PS4 controller connected...");
+    _showPS4Connection = true;
     
     for ( int j = 0; j < 3; j++ )
     {
@@ -244,7 +250,7 @@ void loop()
 
     Chaser(BLUE, BUILT_IN);
 
-    // if( Ps3.isConnected())
+    // if( PS4.isConnected())
     // {
     //   FlashBuiltInLEDs(3, 0, 0, 255);
     // }
@@ -252,12 +258,12 @@ void loop()
     // { 
     //   FlashBuiltInLEDs(3, 255, 0, 0);
     // }
-    // Ps3.begin(_ps3MacAddr);
+    // PS4.begin(_ps4MacAddr);
     // delay(2000);
   }
   else
   {
-    if ( _showPS3Connection ) { Serial.println("PS3 CONNECTED..."); _showPS3Connection = false; }
+    if ( _showPS4Connection ) { Serial.println("PS4 CONNECTED..."); _showPS4Connection = false; }
 
     digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
 
@@ -268,30 +274,55 @@ void loop()
 
     delay(100);
 
+    if ( _wasPSButtonPressed )
+    {
+      int batteryLvl = PS4.Battery();
+
+      //(???) I believe the battery scale is 0 - 9 as the battery lvl always seems to be single digits
+      
+      Serial.printf("Battery Level: %d\n", PS4.Battery());
+
+      //(???) change this to low, medium & good
+      if ( batteryLvl <= 2 )
+      {
+        Serial.println("Battery Level is low, flashing controller red");
+        FlashController(255, 0, 0);
+      }
+      else
+      {
+        Serial.println("Battery Level is good, flashing controller green");
+        FlashController(0, 255, 0);
+      }
+      
+      _wasPSButtonPressed = false;
+    }
+    else
+    {
+        FlashController(0, 0, 255);
+    }
+
     if ( _didCircleChange )
     {
       //TurnOnFrontLightbar(true);
       ToggleLightbar(FRONT, true);
+      //delay here just long enough to allow the user to press and release the buttons...if the user wants to sit on 
+      //the buttons, well that's different code.  Anything less than 250 millis is not long enough
+      delay(250);
       _didCircleChange = false;
     }
-    // //if(Ps3.event.analog_changed.button.circle)
-    // //if(Ps3.data.button.circle)
-    // if(Ps3.event.analog_changed.button.circle)
-    // {
-    //   if ( Ps3.data.analog.button.circle > 0 )
-    //   {
-    //     TurnOnLightbar(true);
-    //   }
-    // }
 
     if(_didCrossChange)
     {
         _keepFLBDemoStrobeOn = !_keepFLBDemoStrobeOn;
-    
+
         Chaser(WHITE, FRONT);
+
+        //delay here just long enough to allow the user to press and release the buttons...if the user wants to sit on 
+        //the buttons, well that's different code.  Anything less than 250 millis is not long enough
+        delay(250);
         _didCrossChange = false;
     }
-    else if ( _keepFLBDemoStrobeOn )
+    else if ( _keepFLBDemoStrobeOn && IsRunningInDemoMode() )
     {
         Chaser(WHITE, FRONT);
     }
@@ -304,44 +335,55 @@ void loop()
         uint8_t red = random(1, 256);
         uint8_t green = random(1, 256);
         uint8_t blue = random(1, 256);
+        //delay here just long enough to allow the user to press and release the buttons...if the user wants to sit on 
+        //the buttons, well that's different code.  Anything less than 250 millis is not long enough
         ToggleLightbar(REAR, red, green, blue);
+        delay(250);
       }
       else
       {
         _isRearLBOn = false;
-        ToggleLightbar(REAR);
+        ToggleLightbar(REAR, false);
       }
 
       _didSquareChange = false;
     }
 
+//    Serial.print("Triangle Changed: "); Serial.println(_didTriangleChange);
+//    Serial.print("L2 Changed: "); Serial.println(_didL2Change);
+//    Serial.print("ShowGroundEffect: "); Serial.println(_showGroundEffect);
     if(_didTriangleChange)
     {
       if ( _didL2Change )
       {
         _showGroundEffect = !_showGroundEffect;
 
-        if ( _showGroundEffect ) ToggleLightbar(GROUND_EFFECT);
+//        Serial.print("Turning Ground Effect: "); (_showGroundEffect ? Serial.println("ON") : Serial.println("OFF") );
+
+        ToggleLightbar(GROUND_EFFECT, _showGroundEffect);
+
+//        Serial.println("Exiting if condition...");
       }
       else
       {
-        if ( _showGroundEffect ) ToggleLightbar(GROUND_EFFECT);
-
         if ( _areBuiltInsOn ) ToggleLightbar(BUILT_IN); 
         else                  ToggleLightbar(BUILT_IN, false);
       }
 
+      //delay here just long enough to allow the user to press and release the buttons...if the user wants to sit on 
+      //the buttons, well that's different code.  Anything less than 250 millis is not long enough
+      delay(250);
       _didL2Change = false;
       _didTriangleChange = false;
     }
     else
     {
-      if ( _showGroundEffect ) ToggleLightbar(GROUND_EFFECT);
+      //if ( _showGroundEffect ) ToggleLightbar(GROUND_EFFECT);
     }
 
     if ( _didL1Change || _didR1Change )
     {
-      _useLiDar = ( _isPS3_L1_Pressed && _isPS3_R1_Pressed ? !_useLiDar : _useLiDar );
+      _useLiDar = ( _isPS4_L1_Pressed && _isPS4_R1_Pressed ? !_useLiDar : _useLiDar );
 
       if ( _useLiDar ) 
       {
@@ -351,13 +393,21 @@ void loop()
       {
         FlashLightbar(BUILT_IN, 1, 255, 0, 0);
       }
-      delay(125);
+      
+      //delay here just long enough to allow the user to press and release the buttons...if the user wants to sit on 
+      //the buttons, well that's different code.  Anything less than 250 millis is not long enough
+      delay(250);
       _builtInLEDs.clear();
       _builtInLEDs.show();
     }
   }
 
+  _didL1Change = _didL2Change = _didR1Change = _didR2Change = false;
+  _didTriangleChange = _didCircleChange = _didCrossChange = _didSquareChange = false;
+  
   ToggleLBDueToLight();
+
+//  Serial.println("End of loop...");
 }
 
 #pragma region SetUp Helper Methods
@@ -432,6 +482,23 @@ void SetupLightbars()
   _lightCal = 1600;
 #endif
 }
+void InitializePS4()
+{
+  Serial.print("Initializing PS4 to ");
+  Serial.println(_ps4MacAddr);
+
+  PS4.attach(OnNotify);
+  PS4.attachOnConnect(OnConnect);
+
+  if ( !PS4.begin(_ps4MacAddr) )
+  {
+    Serial.println("PS4 Failed to Initialize!!!");
+  }
+  else
+  {
+    Serial.println("PS4 Initialized...");
+  }
+}
 #pragma endregion Setup Helper Methods
 
 #pragma region LEDs
@@ -501,6 +568,12 @@ std::tuple<uint8_t, uint8_t, uint8_t> ToRGB8(Color color){
       return std::tuple<uint8_t, uint8_t, uint8_t>(0, 0, 255);
     case GREEN:
       return std::tuple<uint8_t, uint8_t, uint8_t>(0, 255, 0);
+    case LIGHTBLUE:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(50, 147, 168);
+    case YELLOW:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(245, 242, 31);
+    case ORANGE:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 77, 0);
     default: 
       return std::tuple<uint8_t, uint8_t, uint8_t>(255, 255, 255);
   }
@@ -745,12 +818,14 @@ void ToggleLightbar(Lightbar LB, bool TurnOn, uint8_t R, uint8_t G, uint8_t B)
     int firstPixel = 0;
     int numberOfPixels = 0;
     bool turnOffLBSw = false;
+    bool clearBar = true;
 
     // turn the desired lightbar on or off
     switch (LB)
       {
         case FRONT:
           {
+            clearBar = false;
             bar = &_frontLightbar;
             numberOfPixels = NUM_PIXELS_ON_FLB;
             if ( TurnOn ) { digitalWrite(PIN_FLB_SWITCH, HIGH); } 
@@ -760,6 +835,7 @@ void ToggleLightbar(Lightbar LB, bool TurnOn, uint8_t R, uint8_t G, uint8_t B)
         case REAR:
           {
             // Rear and Front LBs are chained
+            clearBar = false;
             bar = &_frontLightbar;
             firstPixel = NUM_PIXELS_ON_FLB;
             numberOfPixels = NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB;
@@ -795,7 +871,8 @@ void ToggleLightbar(Lightbar LB, bool TurnOn, uint8_t R, uint8_t G, uint8_t B)
           }
       }
 
-    bar->clear();
+    if ( clearBar ) bar->clear();
+    
     if (TurnOn) 
     {
         for(int i=firstPixel; i < numberOfPixels; i++)
@@ -803,6 +880,18 @@ void ToggleLightbar(Lightbar LB, bool TurnOn, uint8_t R, uint8_t G, uint8_t B)
           bar->setPixelColor(i, bar->Color(R, G, B));
         }
     }
+    else
+    {
+      //don't clear the bar (most likely this is a chained bar, that need to work independantly as well as one), but turn one bar off without changing the other bar
+      if ( !clearBar )
+      {
+        for(int i=firstPixel; i < numberOfPixels; i++)
+        {
+          bar->setPixelColor(i, bar->Color(0, 0, 0));
+        }
+      }
+    }
+    
     bar->show();
 
     //setting the pin low MUST be called here after the show, setting low prior to the .show will result in low red LEDs shown when the LB should be off
@@ -868,6 +957,9 @@ bool IsRunningInDemoMode()
  */
 void SetupLidarSensors()
 {
+  pinMode(PIN_SDA_LOX, OUTPUT);           //pin 21    // LiDar data pin
+  pinMode(PIN_SCL_LOX, OUTPUT);           //pin 22    // LiDar clock pin
+
   pinMode(PIN_XSHUT_FRONT_LOX, OUTPUT);   //pin 33
   pinMode(PIN_XSHUT_REAR_LOX, OUTPUT);    //pin 25
 
@@ -938,92 +1030,44 @@ void SetupLidarSensors()
   }
 }
 
-void ReadLidarSensors() 
+void ReadLidarSensors_Test()
 {
-  if ( !_useLiDar ) 
-  {
-    //BlinkDebugLED(2);
-    _isFrontObstacleDetected = false;
-    _isRearObstacleDetected = false;
-    return;
-  }
-
   Serial.print("Is LiDar ready (Front:Rear)? ");
   Serial.print(_isFrontLidarOn);
   Serial.print(":");
   Serial.println(_isRearLidarOn);
 
-  if ( !_isFrontLidarOn || !_isRearLidarOn ) SetupLidarSensors();
+  if ( _movementRequested ) {Serial.println("Movement since last read...");}
+  else                      {Serial.println("No movement since last read...");}
+  
+  if ( !_isFrontLidarOn || !_isRearLidarOn ) { SetupLidarSensors(); }
+  else if ( _movementRequested ) { SetupLidarSensors(); _movementRequested = false; }
 
-  if ( _isFrontLidarOn ) _frontLox.rangingTest(&_front_LOX_Measure, false); // pass in 'true' to get debug data printout!
-  if ( _isRearLidarOn ) _rearLox.rangingTest(&_rear_LOX_Measure, false);   // pass in 'true' to get debug data printout!
+  if ( _isFrontLidarOn ) digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
+  if ( _isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, HIGH);
+
+  //QUESTION: can these happen back to back or there should be some latching?
+  //if ( _isFrontLidarOn ) _frontLox.rangingTest(&_front_LOX_Measure, false); // pass in 'true' to get debug data printout!
+  if ( _isRearLidarOn ) _rearLox.rangingTest(&_rear_LOX_Measure, true);   // pass in 'true' to get debug data printout!
 
   //Serial.print("Reading a measurement... ");
-  //_FrontLox.rangingTest(&measure, false); // pass in 'true' to get debug data printout!
-  if ( !_areBuiltInsOn )
-  {
-    //if either are on, turn on the red leds
-    int redValue = (_frontRedValue + _rearRedValue) > 255 ? 255 : (_frontRedValue + _rearRedValue);
 
-    ToggleLightbar(BUILT_IN, true, redValue, 0, 0);
-  }
+  //if either are on, turn on the red leds
+  int redValue = (_frontRedValue + _rearRedValue) > 255 ? 255 : (_frontRedValue + _rearRedValue);
 
-  bool stopForward = false;
+  ToggleLightbar(BUILT_IN, true, redValue, 0, 0);
+
   bool stopBackward = false;
   int rangeMillis = 0;
 
   //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
-  if ( _isFrontLidarOn )
-  {
-    Serial.print("Reading Front LiDar....");
-    if (_front_LOX_Measure.RangeStatus != 4) 
-    { // phase failures have incorrect data
-      Serial.print("Front RedVal: "); Serial.println(_frontRedValue);
-      rangeMillis = _front_LOX_Measure.RangeMilliMeter;
-      Serial.print("Front range is (mm): "); Serial.println(rangeMillis);
-
-      if (_front_LOX_Measure.RangeMilliMeter < 300 ) 
-      {
-        //if ( measure.RangeMilliMeter <= 127) //within 5"
-        if (_front_LOX_Measure.RangeMilliMeter <= 250) //within 7 1/2", 200 is 7 3/4"
-        {
-          stopForward = true;
-          _frontRedValue = 255;
-        }
-        else if ( _frontRedValue < 255)
-        {
-          _frontRedValue+=5;
-        }
-      }
-      else if(_front_LOX_Measure.RangeMilliMeter > 300 && _frontRedValue > 0)  //300mm is 11.811"
-      {
-        //_frontRedValue-=5;
-        Serial.println("Nothing close to front LiDar ");
-        _frontRedValue = 0;
-      }
-    } 
-    else 
-    {
-      Serial.println(" front out of range ");
-      _frontRedValue = 0;
-    }
-  }
-  else 
-  {
-    Serial.println(" front lox is off ");
-    _frontRedValue = 0;
-  }
-
-  rangeMillis = 0;
-  
-  //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
   if ( _isRearLidarOn )
   {
     Serial.print("Reading Rear LiDar....");
-    if (_rear_LOX_Measure.RangeStatus != 4) 
-    { // phase failures have incorrect data
+    if (_rear_LOX_Measure.RangeStatus != 4) // phase failures have incorrect data
+    { 
       Serial.print("Rear RedVal: "); Serial.println(_rearRedValue);
-      rangeMillis = _front_LOX_Measure.RangeMilliMeter;
+      rangeMillis = _rear_LOX_Measure.RangeMilliMeter;
       Serial.print("Rear range is (mm): "); Serial.println(rangeMillis);
 
       if (_rear_LOX_Measure.RangeMilliMeter < 300 ) 
@@ -1048,13 +1092,155 @@ void ReadLidarSensors()
     } 
     else 
     {
-      Serial.println(" rear out of range ");
+      Serial.println("rear out of range ");
       _rearRedValue = 0;
     }
   }
   else 
   {
-    Serial.println(" rear lox is off ");
+    Serial.println("rear lox is off ");
+    _rearRedValue = 0;
+  }
+
+  _isRearObstacleDetected = stopBackward;
+
+  Serial.print("Rear obstacle detected? "); Serial.println((_isRearObstacleDetected ? "TRUE" : "FALSE"));
+
+//  if ( (stopBackward && _isMovingBackward) )
+//  {       
+//    //turn off forward (left side)
+//    ledcWrite(1, 0);
+//    //turn off reverse (left side)
+//    ledcWrite(2, 0);
+//
+//    //turn off forward (right side)
+//    ledcWrite(3, 0);
+//    //turn off reverse (right side)
+//    ledcWrite(4, 0);
+//  }
+}
+
+void ReadLidarSensors() 
+{
+  if ( !_useLiDar ) 
+  {
+    //BlinkDebugLED(2);
+    _isFrontObstacleDetected = false;
+    _isRearObstacleDetected = false;
+    return;
+  }
+
+  Serial.print("Is LiDar ready (Front:Rear)? ");
+  Serial.print(_isFrontLidarOn);
+  Serial.print(":");
+  Serial.println(_isRearLidarOn);
+
+  if ( _movementRequested ) {Serial.println("Movement since last read...");}
+  else                      {Serial.println("No movement since last read...");}
+  
+  if ( !_isFrontLidarOn || !_isRearLidarOn ) { SetupLidarSensors(); }
+  else if ( _movementRequested ) { SetupLidarSensors(); _movementRequested = false; }
+
+  if ( _isFrontLidarOn ) _frontLox.rangingTest(&_front_LOX_Measure, false); // pass in 'true' to get debug data printout!
+  if ( _isRearLidarOn ) _rearLox.rangingTest(&_rear_LOX_Measure, true);   // pass in 'true' to get debug data printout!
+
+  //Serial.print("Reading a measurement... ");
+  //_FrontLox.rangingTest(&measure, false); // pass in 'true' to get debug data printout!
+  if ( !_areBuiltInsOn )
+  {
+    //if either are on, turn on the red leds
+    int redValue = (_frontRedValue + _rearRedValue) > 255 ? 255 : (_frontRedValue + _rearRedValue);
+
+    ToggleLightbar(BUILT_IN, true, redValue, 0, 0);
+  }
+
+  bool stopForward = false;
+  bool stopBackward = false;
+  int rangeMillis = 0;
+
+  //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
+  if ( _isFrontLidarOn )
+  {
+    //Serial.print("Reading Front LiDar....");
+    if (_front_LOX_Measure.RangeStatus != 4) 
+    { // phase failures have incorrect data
+      //Serial.print("Front RedVal: "); Serial.println(_frontRedValue);
+      rangeMillis = _front_LOX_Measure.RangeMilliMeter;
+      //Serial.print("Front range is (mm): "); Serial.println(rangeMillis);
+
+      if (_front_LOX_Measure.RangeMilliMeter < 300 ) 
+      {
+        //if ( measure.RangeMilliMeter <= 127) //within 5"
+        if (_front_LOX_Measure.RangeMilliMeter <= 250) //within 7 1/2", 200 is 7 3/4"
+        {
+          stopForward = true;
+          _frontRedValue = 255;
+        }
+        else if ( _frontRedValue < 255)
+        {
+          _frontRedValue+=5;
+        }
+      }
+      else if(_front_LOX_Measure.RangeMilliMeter > 300 && _frontRedValue > 0)  //300mm is 11.811"
+      {
+        //_frontRedValue-=5;
+        //Serial.println("Nothing close to front LiDar ");
+        _frontRedValue = 0;
+      }
+    } 
+    else 
+    {
+      //Serial.println("front out of range ");
+      _frontRedValue = 0;
+    }
+  }
+  else 
+  {
+    //Serial.println("front lox is off ");
+    _frontRedValue = 0;
+  }
+
+  rangeMillis = 0;
+  
+  //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
+  if ( _isRearLidarOn )
+  {
+    Serial.print("Reading Rear LiDar....");
+    if (_rear_LOX_Measure.RangeStatus != 4) 
+    { // phase failures have incorrect data
+      Serial.print("Rear RedVal: "); Serial.println(_rearRedValue);
+      rangeMillis = _rear_LOX_Measure.RangeMilliMeter;
+      Serial.print("Rear range is (mm): "); Serial.println(rangeMillis);
+
+      if (_rear_LOX_Measure.RangeMilliMeter < 300 ) 
+      {
+        //if ( measure.RangeMilliMeter <= 127) //within 5"
+        if (_rear_LOX_Measure.RangeMilliMeter <= 250) //within 7 1/2", 200 is 7 3/4"
+        {
+          stopBackward = true;
+          _rearRedValue = 255;
+        }
+        else if ( _rearRedValue < 255)
+        {
+          _rearRedValue+=5;
+        }
+      }
+      else if(_rear_LOX_Measure.RangeMilliMeter > 300 && _rearRedValue > 0)  //300mm is 11.811"
+      {
+        //_rearRedValue-=5;
+        Serial.println("Nothing close to rear LiDar ");
+        _rearRedValue = 0;
+      }
+    } 
+    else 
+    {
+      Serial.println("rear out of range ");
+      _rearRedValue = 0;
+    }
+  }
+  else 
+  {
+    Serial.println("rear lox is off ");
     _rearRedValue = 0;
   }
 
@@ -1080,65 +1266,85 @@ void ReadLidarSensors()
 
 #pragma endregion LiDar
 
-#pragma region PS3
+#pragma region PS4
+int _lastR1Value = 0;
+int _lastR2Value = 0;
+int _lastL1Value = 0;
+int _lastL2Value = 0;
+
 void OnNotify()
 {
-    //BlinkDebugLED(1);
+  //BlinkDebugLED(1);
 
-    _leftX = (Ps3.data.analog.stick.lx);
-    _leftY = (Ps3.data.analog.stick.ly);
-    _rightX = (Ps3.data.analog.stick.rx);
-    _rightY = (Ps3.data.analog.stick.ry);
+  _leftX = PS4.LStickX();
+  _leftY = PS4.LStickY();
+  _rightX = PS4.RStickX();
+  _rightY = PS4.RStickY();
 
-    if (Ps3.event.analog_changed.button.l1)
-    {
+  if ( PS4.L1() != _lastL1Value )
+  {    
       _didL1Change = true;
-      _isPS3_L1_Pressed = ( Ps3.data.analog.button.l1 > 0 );
-    }
+      _isPS4_L1_Pressed = ( PS4.L1() > 0 );
+      //_isPS4_L1_Pressed = true;
+      _lastL1Value = PS4.L1();
+  }
 
-    if (Ps3.event.analog_changed.button.l2)
-    {
+  if ( PS4.L2Value() != _lastL2Value )
+  {    
       _didL2Change = true;
-      _isPS3_L2_Pressed = ( Ps3.data.analog.button.l2 > 0 );
-    }
+      _isPS4_L2_Pressed = ( PS4.L2Value() > 0 );
+  }
 
-    if (Ps3.event.analog_changed.button.r1)
-    {
+  if ( PS4.R1() != _lastR1Value )
+  {    
       _didR1Change = true;
-      _isPS3_R1_Pressed = ( Ps3.data.analog.button.r1 > 0 );
-    }
+      _isPS4_R1_Pressed = ( PS4.R1() > 0 );
+      _lastR1Value = PS4.R1();
+  }
 
-    if(Ps3.event.analog_changed.button.circle)
-    {
-      if ( Ps3.data.analog.button.circle > 0 )
-      {
-        _didCircleChange = true;
-      }
-    }
+  if ( PS4.R2Value() != _lastR2Value )
+  {    
+      _didR2Change = true;
+      _isPS4_R2_Pressed = ( PS4.R2Value() > 0 );
+  }
 
-    if(Ps3.event.analog_changed.button.triangle)
+//(???) need to had logic here to determine if the button state has changed
+  if( PS4.Circle() )
+  {
+    if ( PS4.Circle() > 0 )
     {
-      if ( Ps3.data.analog.button.triangle > 0 )
-      {
-        _didTriangleChange = true;
-      }
+      _didCircleChange = true;
     }
+  }
 
-    if(Ps3.event.analog_changed.button.cross)
+  if( PS4.Triangle() )
+  {
+    if ( PS4.Triangle() > 0 )
     {
-      if ( Ps3.data.analog.button.cross > 0 )
-      {
-        _didCrossChange = true;
-      }
+      _didTriangleChange = true;
     }
+  }
 
-    if(Ps3.event.analog_changed.button.square)
+  if( PS4.Cross() )
+  {
+    if ( PS4.Cross() > 0 )
     {
-      if ( Ps3.data.analog.button.square > 0 )
-      {
-        _didSquareChange = true;
-      }
+      _didCrossChange = true;
     }
+  }
+
+  if( PS4.Square() )
+  {
+    if ( PS4.Square() > 0 )
+    {
+      _didSquareChange = true;
+    }
+  }
+
+  if ( PS4.PSButton() )
+  {
+    _wasPSButtonPressed = true;
+  }
 
 //     //Notes:
 //     //
@@ -1218,80 +1424,86 @@ void OnNotify()
 //     //  ledcWrite(4, 0);
 //     //}
 
-
-    if ( _leftY < -5 ) //the joystick is being pushed forward
-    {
-      if ( !_isFrontObstacleDetected )
-      {
-        //turn on forward (left side)
-        ledcWrite(1, (abs(_leftY) + 127));
-        //turn off reverse (left side)
-        ledcWrite(2, 0);
-        _isMovingForward = true;
-        _isMovingBackward = false;
-      }
-    }
-    else if ( _leftY > 5 && !_isRearObstacleDetected ) //the joystick is being pulled aft
+  if ( _leftY > 5 ) //the joystick is being pushed forward
+  {
+    Serial.println("going forward...");
+    if ( !_isFrontObstacleDetected )
     {
       //turn on forward (left side)
-      ledcWrite(1, 0);
-      //turn on reverse (left side)
-      ledcWrite(2, (abs(_leftY) + 127));
-      _isMovingForward = false;
-      _isMovingBackward = true;
-    }
-    else
-    {
-      //turn off forward (left side)
-      ledcWrite(1, 0);
+      ledcWrite(1, (abs(_leftY) + 127));
       //turn off reverse (left side)
       ledcWrite(2, 0);
-      _isMovingForward = false;
+      _isMovingForward = true;
       _isMovingBackward = false;
+      _movementRequested = true;
     }
-  
-    if ( _rightY < -5 ) //the joystick is being pushed forward
-    {
-      if ( !_isFrontObstacleDetected )
-      {
-        //turn on forward (right side)
-        ledcWrite(3, (abs(_rightY) + 127));
-        //turn off reverse (right side)
-        ledcWrite(4, 0);
-        _isMovingForward = true;
-        _isMovingBackward = false;
-      }
-    }
-    else if (_rightY > 5 && !_isRearObstacleDetected)  // the joystick is being pulled aft
+  }
+  else if ( _leftY < -5 && !_isRearObstacleDetected ) //the joystick is being pulled aft
+  {
+    Serial.println("going backward...");
+
+    //turn on forward (left side)
+    ledcWrite(1, 0);
+    //turn on reverse (left side)
+    ledcWrite(2, (abs(_leftY) + 127));
+    _isMovingForward = false;
+    _isMovingBackward = true;
+    _movementRequested = true;
+  }
+  else
+  {
+    //turn off forward (left side)
+    ledcWrite(1, 0);
+    //turn off reverse (left side)
+    ledcWrite(2, 0);
+    _isMovingForward = false;
+    _isMovingBackward = false;
+  }
+
+  if ( _rightY > 5 ) //the joystick is being pushed forward
+  {
+    if ( !_isFrontObstacleDetected )
     {
       //turn on forward (right side)
-      ledcWrite(3, 0);
-      //turn on reverse (right side)
-      ledcWrite(4, (abs(_rightY) + 127));
-      _isMovingForward = false;
-      _isMovingBackward = true;
-    }
-    else
-    {
-      //turn off forward (right side)
-      ledcWrite(3, 0);
+      ledcWrite(3, (abs(_rightY) + 127));
       //turn off reverse (right side)
       ledcWrite(4, 0);
-      _isMovingForward = false;
+      _isMovingForward = true;
       _isMovingBackward = false;
+      _movementRequested = true;
     }
+  }
+  else if (_rightY < -5 && !_isRearObstacleDetected)  // the joystick is being pulled aft
+  {
+    //turn on forward (right side)
+    ledcWrite(3, 0);
+    //turn on reverse (right side)
+    ledcWrite(4, (abs(_rightY) + 127));
+    _isMovingForward = false;
+    _isMovingBackward = true;
+    _movementRequested = true;
+  }
+  else
+  {
+    //turn off forward (right side)
+    ledcWrite(3, 0);
+    //turn off reverse (right side)
+    ledcWrite(4, 0);
+    _isMovingForward = false;
+    _isMovingBackward = false;
+  }
 
 
-    ////all four wheels oppossing direction...basically it will spin in a circle...donuts!!!
-    //if ( _rightY < -5 )
-    //{
-    //  //forward
-    //  ledcWrite(3, (abs(_rightY) + 127));
-    //}
-    //else if (_rightY > 5)
-    //{
-    //  ledcWrite(3, 0);
-    //}
+  ////all four wheels oppossing direction...basically it will spin in a circle...donuts!!!
+  //if ( _rightY < -5 )
+  //{
+  //  //forward
+  //  ledcWrite(3, (abs(_rightY) + 127));
+  //}
+  //else if (_rightY > 5)
+  //{
+  //  ledcWrite(3, 0);
+  //}
 }
 
 void OnConnect()
@@ -1299,5 +1511,67 @@ void OnConnect()
     digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
     FlashLightbar(BUILT_IN, 3, 0, 0, 255);
     digitalWrite(PIN_BT_CONNECTED_LED, LOW);
+
+    // Sets the color of the controller's front light
+    // Params: Red, Green,and Blue
+    // See here for details: https://www.w3schools.com/colors/colors_rgb.asp
+    PS4.setLed(0, 0, 255);
+    //nextRainbowColor();
+
+    // Sets how fast the controller's front light flashes
+    // Params: How long the light is on in ms, how long the light is off in ms
+    // Range: 0->2550 ms, Set to 0, 0 for the light to remain on
+    //PS4.setFlashRate(PS4.LStickY() * 10, PS4.RStickY() * 10);
+    PS4.setFlashRate(250, 250);
+
+    // Sets the rumble of the controllers
+    // Params: Weak rumble intensity, Strong rumble intensity
+    // Range: 0->255
+    //PS4.setRumble(PS4.L2Value(), PS4.R2Value());
+    PS4.setRumble(0, 255);
+
+    // Sends data set in the above three instructions to the controller
+    PS4.sendToController();
+
+    // Don't send data to the controller immediately, will cause buffer overflow
+    Serial.println("Connected...");
+    
+    //PS4.setRumble(100, 100);
+    delay(10);
 }
-#pragma endregion PS3
+
+void FlashController(int R, int G, int B)
+{
+    // Sets the color of the controller's front light
+    // Params: Red, Green,and Blue
+    // See here for details: https://www.w3schools.com/colors/colors_rgb.asp
+    PS4.setLed(R, G, B);
+
+    // Sets how fast the controller's front light flashes
+    // Params: How long the light is on in ms, how long the light is off in ms
+    // Range: 0->2550 ms, Set to 0, 0 for the light to remain on
+    //PS4.setFlashRate(PS4.LStickY() * 10, PS4.RStickY() * 10);
+    PS4.setFlashRate(250, 250);
+
+    PS4.setRumble(0, 0);
+
+    PS4.sendToController();
+    delay(10);
+}
+
+// Calculates the next value in a rainbow sequence
+//void nextRainbowColor() {
+//  if (r > 0 && b == 0) {
+//    r--;
+//    g++;
+//  }
+//  if (g > 0 && r == 0) {
+//    g--;
+//    b++;
+//  }
+//  if (b > 0 && g == 0) {
+//    r++;
+//    b--;
+//  }
+//}
+#pragma endregion PS4
