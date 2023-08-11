@@ -33,6 +33,7 @@
   08.05.23 DJP - Changed event time from 150ms to 250ms to resolve a button pressed timing issue
   08.05.23 DJP - Rover gets laxed/sluggish in response to PS4 controller requests, adding a high gain antenna does resolve this issue
   08.11.23 DJP - Added Cross with L2 to show the chase in white on both front & rear lightbars vs. just the front to assist with verifying both lightbars turning on/off the LEDs
+  08.11.23 DJP - Resolved bug in built-ins not turning on when pressing the triangle without the L2 button
 */
 #pragma endregion Code Hx / Change Log
 
@@ -382,8 +383,8 @@ void loop()
       }
       else
       {
-        if ( _areBuiltInsOn ) ToggleLightbar(BUILT_IN); 
-        else                  ToggleLightbar(BUILT_IN, false);
+        if ( _areBuiltInsOn ) { ToggleLightbar(BUILT_IN, false); _areBuiltInsOn = false; }
+        else                  { ToggleLightbar(BUILT_IN); _areBuiltInsOn = true; }
       }
 
       //delay here just long enough to allow the user to press and release the buttons...if the user wants to sit on 
