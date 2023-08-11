@@ -32,6 +32,7 @@
   08.03.23 DJP - Added PS4 support
   08.05.23 DJP - Changed event time from 150ms to 250ms to resolve a button pressed timing issue
   08.05.23 DJP - Rover gets laxed/sluggish in response to PS4 controller requests, adding a high gain antenna does resolve this issue
+  08.11.23 DJP - Added Cross with L2 to show the chase in white on both front & rear lightbars vs. just the front to assist with verifying both lightbars turning on/off the LEDs
 */
 #pragma endregion Code Hx / Change Log
 
@@ -124,7 +125,7 @@ int _color = 1;
 //char _ps3MacAddr[20] = { "01:02:03:04:05:06" };
 //char _ps3MacAddr[20] = { "21:02:03:04:05:02"}; //2021 class
 //char _ps3MacAddr[20] = { "23:07:31:04:05:01"}; //2023 class
-char _ps4MacAddr[20] = {"23:08:03:04:05:19"};
+char _ps4MacAddr[20] = {"23:08:03:04:05:02"};    //2023 class
 
 uint8_t _lbBrightness = 128;
 const uint8_t MAX_LB_BRIGHTNESS = 255;
@@ -315,7 +316,22 @@ void loop()
     {
         _keepFLBDemoStrobeOn = !_keepFLBDemoStrobeOn;
 
-        Chaser(WHITE, FRONT);
+        if (_didL2Change)
+        {
+          if ( !_isRearLBOn )
+          {
+            Chaser(WHITE, FRONT_AND_REAR);    
+          }
+          else
+          {
+            Chaser(WHITE, FRONT);
+          }
+        }
+        else
+        {
+          Chaser(WHITE, FRONT);
+        }
+        
 
         //delay here just long enough to allow the user to press and release the buttons...if the user wants to sit on 
         //the buttons, well that's different code.  Anything less than 250 millis is not long enough
