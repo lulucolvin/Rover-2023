@@ -34,6 +34,7 @@
   08.05.23 DJP - Rover gets laxed/sluggish in response to PS4 controller requests, adding a high gain antenna does resolve this issue
   08.11.23 DJP - Added Cross with L2 to show the chase in white on both front & rear lightbars vs. just the front to assist with verifying both lightbars turning on/off the LEDs
   08.11.23 DJP - Resolved bug in built-ins not turning on when pressing the triangle without the L2 button
+  08.12.23 DJP - Added button up, down, left & right to PS4 controller logic to facilitate testing at HSU rover repair day today
 */
 #pragma endregion Code Hx / Change Log
 
@@ -126,7 +127,7 @@ int _color = 1;
 //char _ps3MacAddr[20] = { "01:02:03:04:05:06" };
 //char _ps3MacAddr[20] = { "21:02:03:04:05:02"}; //2021 class
 //char _ps3MacAddr[20] = { "23:07:31:04:05:01"}; //2023 class
-char _ps4MacAddr[20] = {"23:08:03:04:05:02"};    //2023 class
+char _ps4MacAddr[20] = {"23:08:03:04:05:19"};    //2023 class
 
 uint8_t _lbBrightness = 128;
 const uint8_t MAX_LB_BRIGHTNESS = 255;
@@ -1363,36 +1364,58 @@ void OnNotify()
     _wasPSButtonPressed = true;
   }
 
-//     //Notes:
-//     //
-//     //PS3 controller:
-//     //Stick:
-//     //a negative value indicates the joystick is being pushed forward
-//     //a positive value indicates the joystick is being pulled towards the user/aft
-//     //a zero value indicates the joystick is in the neutral position
-//     //
-//     //Buttons: Ps3.event.analog_changed.button.*
-//     //square, cross, circle, triangle, l1, l2, r1, r2, up, down, left, right
-//     //  All of these fields/buttons are declared as uint8_t, which means that they can have a value between 0 and 255. If we look into this file, we can check that these fields will have the difference between the previous analog value of the button and the current one. This means that the value will be greater than 0 if the analog value of the button changes.
-//     //  It’s important to take in consideration that this value will be equal to zero while the button is pressed but in the same position, since the previous position will be equal to the current one.
-//     //  For example, if we click the R2 button to the maximum and hold it pressed, the corresponding field will be zero. It will only be different from zero when the button is going from not pressed to pressed, and then from pressed to not pressed (or between intermediate states).
-//     //  Note also that even if we give a single click from not pressed to fully pressed, multiple intermediate positions may be detected. Consequently, multiple events will be triggered.
-//     //  so
-//     //  this renders the event that has changed: Ps3.event.analog_changed.button.circle
-//     //  and this renders the value indicating the change: Ps3.data.analog.button.circle
-//     //    we simply access the button to obtain the analog value. 0 corresponds to not pressed and 255 corresponds to fully pressed.
-//     //    IE: 
-//     //      if(Ps3.event.analog_changed.button.square)
-//     //      {
-//     //        Serial.print("Square New value: ");
-//     //        Serial.println(Ps3.data.analog.button.square);
-//     //      }
-//     //
-//     //Motors:
-//     //the motors run in tandem...1 & 2 work the left side, 3 & 4 the right
-//     //1 & 3 are forwards
-//     //2 & 4 are reverse
-//     //a PWM value of: 0 = stop, 255 = full speed, 127 is half speed
+  if ( PS4.Up() )
+  {
+    ButtonUp();
+    return;
+  }
+
+  if ( PS4.Left() )
+  {
+    ButtonLeft();
+    return;
+  }
+  if ( PS4.Down() )
+  {
+    ButtonDown();
+    return;
+  }
+  if ( PS4.Right() )
+  {
+    ButtonRight();
+    return;
+  }
+
+//Notes:
+//
+//PS3 controller:
+//Stick:
+//a negative value indicates the joystick is being pushed forward
+//a positive value indicates the joystick is being pulled towards the user/aft
+//a zero value indicates the joystick is in the neutral position
+//
+//Buttons: Ps3.event.analog_changed.button.*
+//square, cross, circle, triangle, l1, l2, r1, r2, up, down, left, right
+//  All of these fields/buttons are declared as uint8_t, which means that they can have a value between 0 and 255. If we look into this file, we can check that these fields will have the difference between the previous analog value of the button and the current one. This means that the value will be greater than 0 if the analog value of the button changes.
+//  It’s important to take in consideration that this value will be equal to zero while the button is pressed but in the same position, since the previous position will be equal to the current one.
+//  For example, if we click the R2 button to the maximum and hold it pressed, the corresponding field will be zero. It will only be different from zero when the button is going from not pressed to pressed, and then from pressed to not pressed (or between intermediate states).
+//  Note also that even if we give a single click from not pressed to fully pressed, multiple intermediate positions may be detected. Consequently, multiple events will be triggered.
+//  so
+//  this renders the event that has changed: Ps3.event.analog_changed.button.circle
+//  and this renders the value indicating the change: Ps3.data.analog.button.circle
+//    we simply access the button to obtain the analog value. 0 corresponds to not pressed and 255 corresponds to fully pressed.
+//    IE: 
+//      if(Ps3.event.analog_changed.button.square)
+//      {
+//        Serial.print("Square New value: ");
+//        Serial.println(Ps3.data.analog.button.square);
+//      }
+//
+//Motors:
+//the motors run in tandem...1 & 2 work the left side, 3 & 4 the right
+//1 & 3 are forwards
+//2 & 4 are reverse
+//a PWM value of: 0 = stop, 255 = full speed, 127 is half speed
 
 
 
@@ -1555,6 +1578,71 @@ void OnConnect()
     
     //PS4.setRumble(100, 100);
     delay(10);
+}
+
+void ButtonUp()
+{
+    Serial.println("Button up code...");
+    //turn on forward (left side)
+    ledcWrite(1, 254);
+    //turn off reverse (left side)
+    ledcWrite(2, 0);
+    
+    //turn on forward (right side)
+    ledcWrite(3, 254);
+    //turn off reverse (right side)
+    ledcWrite(4, 0);
+    _isMovingForward = true;
+    _isMovingBackward = false;
+    _movementRequested = true;  
+}
+
+void ButtonLeft()
+{
+    Serial.println("Button left code...");
+    //turn off forward (left side)
+    ledcWrite(1, 0);
+    //turn on reverse (left side)
+    ledcWrite(2, 254);
+    //turn on forward (right side)
+    ledcWrite(3, 254);
+    //turn off reverse (right side)
+    ledcWrite(4, 0);
+    _isMovingForward = true;
+    _isMovingBackward = false;
+    _movementRequested = true;  
+}
+void ButtonDown()
+{
+    Serial.println("Button down code...");
+    //turn off forward (left side)
+    ledcWrite(1, 0);
+    //turn on reverse (left side)
+    ledcWrite(2, 254);
+
+    //turn off forward (right side)
+    ledcWrite(3, 0);
+    //turn on reverse (right side)
+    ledcWrite(4, 254);
+    _isMovingForward = false;
+    _isMovingBackward = true;
+    _movementRequested = true;
+}
+void ButtonRight()
+{
+    Serial.println("Button right code...");
+    //turn on forward (left side)
+    ledcWrite(1, 254);
+    //turn off reverse (left side)
+    ledcWrite(2, 0);
+
+    //turn off forward (right side)
+    ledcWrite(3, 0);
+    //turn on reverse (left side)
+    ledcWrite(4, 254);
+    _isMovingForward = true;
+    _isMovingBackward = false;
+    _movementRequested = true;  
 }
 
 void FlashController(int R, int G, int B)
