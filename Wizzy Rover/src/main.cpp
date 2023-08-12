@@ -1,3 +1,42 @@
+#pragma region Code Hx / Change Log
+/*
+  ACBR RGB One
+
+  Controls the rover used for the HSU Foundation & Be The Magic Foundation Summer Class 2021 (Wizzy Rover).
+  Hx: 
+  05.24.21 DJP - Started coding
+  05.25.21 DJP - Added headlight functionality
+  05.29.21 DJP - Added obstacle avoidance LiDar sensors
+  06.01.21 DJP - Added topside leds for better visibility of rover status in sunlight
+  07.07.21 DJP - Changed "star" button on controller to show a red & blue back & forth fade
+  07.07.21 DJP - Tweaked lightbar light sensitivity due to new location of the photoresistor
+  07.07.21 DJP - Tweaked LiDar sensitivity due to new location of the LiDar sensors
+  07.29.21 DJP - Incorporated Doug & Sarah's in class changes
+  08.03.21 DJP - Moved code from the OnNotify() to the Loop() to resolve BT response issues between the PS3 and the ESP32
+  08.04.21 DJP - Changed ReadLiDarSensors() to not clear the ground effect leds between reads when ground effect is on
+  07.22.22 DJP - Changed SetupLiDarSensort() to not entire a never ending while loop when a LiDar sensor fails to initialize
+  07.23.22 DJP - Added toggle option to turn on/off LiDar via PS3 L1 & R1 combination
+  08.03.22 DJP - Added ground effect lighting
+  08.15.22 DJP - Added Bit-Wizards demo mode, by setting pin 34 high the ground effect lighting and FLB strobe blue & yellow
+                    keeping pin 34 low keeps the rover in normal mode (non-Demo mode)...for testing, I used a jumper between pin 34
+                    and pin 0 to turn on demo mode, leaving 34 empty or using a pin already in low state (IE pin 2) will take it out 
+                    of demo mode...this can be done on the fly
+  07.20.23 DJP - Changed debug led functionality as follows:
+                  1) The blue led on the hat of the Wizzy controller board will blink 3 times if not BT connection and will otherwise
+                     stay on (blue)
+                  2) The white eyes on the face of the Wizzy controller board are the debug leds and will blink accordingly depending 
+                     on the issue detected
+  07.20.23 DJP - Changed front & rear lightbars to function as one lightbar
+  07.20.23 DJP - Added ground effect lightbars as part of the standard rover startup
+  07.28.23 DJP - Finished testing code changes for Wizzy Rover Camp 2023
+  08.03.23 DJP - Added PS4 support
+  08.05.23 DJP - Changed event time from 150ms to 250ms to resolve a button pressed timing issue
+  08.05.23 DJP - Rover gets laxed/sluggish in response to PS4 controller requests, adding a high gain antenna does resolve this issue
+  08.11.23 DJP - Added Cross with L2 to show the chase in white on both front & rear lightbars vs. just the front to assist with verifying both lightbars turning on/off the LEDs
+  08.11.23 DJP - Resolved bug in built-ins not turning on when pressing the triangle without the L2 button
+*/
+#pragma endregion Code Hx / Change Log
+
 //confirm the com is correct in platform.ini file then open a new terminal window, key in the following and press enter: pio run --target upload
 
 //run sixaxispair.exe to determine the address of the PS3 controller, the default address is 01:02:03:04:05:06.  The default will work as long as
@@ -9,37 +48,58 @@
 //  pio run --target upload
 //  pio run --target upload --upload-port com5
 //
-// MAKE CERTAIN YOUR TERMINAL WINDOW IS IN THE CORRECT DIRECTORY...ie C:\Users\perkins\Documents\PlatformIO\Projects\ACBR RGB One
+// MAKE CERTAIN YOUR TERMINAL WINDOW IS IN THE CORRECT DIRECTORY ..\PlatformIO\Projects\Rover-2023\Wizzy Rover
 //     if not, use the cd command via the PS prompt to change
 
 #include <Arduino.h>            // Arduino Framework
 #include <Adafruit_NeoPixel.h>
-#include <Tone32.h>
-#include <Ps3Controller.h>
-#include <esp32-hal-ledc.h>
-#include "Adafruit_VL53L0X.h"
+//#include <Tone32.h>
 
+#include <ps4.h>
+#include <PS4Controller.h>
+#include <ps4_int.h>
+
+//#include <esp32-hal-ledc.h>
+#include "Adafruit_VL53L0X.h"
+#include <tuple>
 
 #ifndef __ESP32__
 #define __ESP32__
 #endif
 
-#define NUMPIXELS             4     // We have 4 LEDs on the board
-#define NUM_PIXELS_ON_LB      6     // We have 6 LEDs on the front lightbar (FLB)
-#define NUM_PIXELS_ON_WLB     12    // We have 12 LEDs ont he wizzy LBs
-#define NUM_PIXELS_ON_GELB    12    // 6 on each LB
+#define NUM_PIXELS_ON_DB      4     // We have 4 LEDs on the driver board (DB) (with the LEDs facing you, index 3 is upper left, index 2 is lower left, index 1 is upper right, and index 0 is lower right)
+#define NUM_PIXELS_ON_FLB     6     // We have 6 LEDs on the front lightbar (FLB)
+#define NUM_PIXELS_ON_RLB     6     // We have 6 LEDs on the rear lightbar (RLB)
+#define NUM_PIXELS_ON_GELB    12    // We have 6 LEDs on each ground effect lightbar (GELB)
 
+//The PIN_MOTOR* are reserved pins; they are on our chip that we're connecting to our ESP32 through our circuit board!
+#define PIN_MOTOR2            12    // RESERVED for motor 2
+#define PIN_MOTOR1            13    // RESERVED for motor 1
 #define PIN_FLB_SWITCH        14    // Flips the transistor switch on/off (high is on, closes the circuit)
-#define PIN_PIXELS            18    // Our LEDs are hardwired to pin 18
+#define PIN_AVAIL_1           15    // Not currently used
+#define PIN_MOTOR3            16    // RESERVED for motor 3
+#define PIN_MOTOR4            17    // RESERVED for motor 4
+#define PIN_PIXELS_DB         18    // Driver board LEDs are hardwired to pin 18
 #define PIN_BUZZER            19    // The buzzer is hardwired to pin 19
+#define PIN_AVAIL_2           20    // Not currently used
+#define PIN_SDA_LOX           21    // LiDar data pin
+#define PIN_SCL_LOX           22    // LiDar clock pin
 #define PIN_PIXELS_GELB       23    // Ground effect LB's
+#define PIN_UNKNOWN           24    // Not defined on board
 #define PIN_XSHUT_REAR_LOX    25    // shutdown pin for rear facing LOX
 #define PIN_BT_CONNECTED_LED  26    // Blue LED indicated BT connection established
-#define PIN_PIXELS_WLB        27    // Lightbar signal/DIN pin...this will control both front & rear LB
+#define PIN_PIXELS_FLB        27    // Lightbar signal/DIN pin...this will control both front & rear LB
 #define PIN_DEBUG_LED         32    // Turns on/off the white debug led 
 #define PIN_XSHUT_FRONT_LOX   33    // shutdown pin for front facing LOX
 #define PIN_DEMO_MODE         34    // when set high, causes the code to run in BW demo mode
 #define PIN_PHOTORESISTOR     35    // Reads the photoresistor analog value
+
+enum Lightbar { FRONT, REAR, GROUND_EFFECT, FRONT_AND_REAR, BUILT_IN };
+enum Color { UNKNOWN, RED, WHITE, BLUE, GREEN, YELLOW, ORANGE, LIGHTBLUE };
+// Exercise 1: Add a custom color to the enum above
+
+Color _isRedWhiteOrBlue = RED;
+Color _nextColor = UNKNOWN;
 
 //arduino IDE allows this, but PlatformIO fails...both allow the uint8_t
 //#define FRONT_FACING_LOX_I2C_ADDR 0x30; //the I2C address for the front facing lox
@@ -57,16 +117,20 @@ int _rightY = 0;
 int _leftX = 0;
 int _leftY = 0;
 
-int _redValue = 0;
+int _frontRedValue = 0;
+int _rearRedValue = 0;
 
 int _color = 1;
 
 //use SixAxisPairTool to set a custom mac address...the address below is the default that ships on the device
-char _ps3MacAddr[20] = {"22:07:24:04:05:16"}; //2022 class
+//char _ps3MacAddr[20] = { "01:02:03:04:05:06" };
+//char _ps3MacAddr[20] = { "21:02:03:04:05:02"}; //2021 class
+//char _ps3MacAddr[20] = { "23:07:31:04:05:01"}; //2023 class
+char _ps4MacAddr[20] = {"23:08:03:04:05:02"};    //2023 class
 
 uint8_t _lbBrightness = 128;
 const uint8_t MAX_LB_BRIGHTNESS = 255;
-const int LOOPS_BETWEEN_BLINKS = 25;
+const int LOOPS_BETWEEN_BLINKS = 5;
 
 bool _isFrontObstacleDetected = false;
 bool _isRearObstacleDetected = false;
@@ -89,267 +153,80 @@ bool _isRearLidarOn = false;
 bool _didL1Change = false;
 bool _didR1Change = false;
 bool _didL2Change = false;
-bool _isPS3_L1_Pressed = false;
-bool _isPS3_R1_Pressed = false;
-bool _isPS3_L2_Pressed = false;
+bool _didR2Change = false;
+bool _isPS4_L1_Pressed = false;
+bool _isPS4_R1_Pressed = false;
+bool _isPS4_R2_Pressed = false;
+bool _isPS4_L2_Pressed = false;
 bool _showGroundEffect = false;
 bool _keepFLBDemoStrobeOn = false;
 int _loopsBetweenBlinks = 0;
-
+bool _showPS4Connection = true;
+bool _movementRequested = false;
+bool _wasPSButtonPressed = false;
 
 // Set up some variables for the light level: a calibration value and and a raw light value
 int _lightCal;
 int _lightVal;
 
-// declare lightbar variables
-Adafruit_NeoPixel _builtInLEDs(NUMPIXELS, PIN_PIXELS, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel _wizzyLightbars(NUM_PIXELS_ON_LB, PIN_PIXELS_WLB, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel _builtInLEDs(NUM_PIXELS_ON_DB, PIN_PIXELS_DB, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel _frontLightbar((NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB), PIN_PIXELS_FLB, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel _groundEffectLB(NUM_PIXELS_ON_GELB, PIN_PIXELS_GELB, NEO_GRB + NEO_KHZ800);
-// declare LiDar variables
+
 Adafruit_VL53L0X _frontLox = Adafruit_VL53L0X();
 Adafruit_VL53L0X _rearLox = Adafruit_VL53L0X();
 // this holds the lidar measurement 
 VL53L0X_RangingMeasurementData_t _front_LOX_Measure;
 VL53L0X_RangingMeasurementData_t _rear_LOX_Measure;
 
-// method prototypes
-bool IsRunningInDemoMode();
+// LED related methods
+void SetupLightbars();
 void BlinkDebugLED(int BlinkXTimes);
-void FlashFrontLightbar(bool FlashRandomly = false);                  //flashes the leds running across the lightbar
-void FlashRearLightbar(bool FlashRandomly = false);                   //flashes the leds running across the lightbar
-void FlashBuiltInLEDs();                                              //flashes the bottom leds blue if Bluetooth is connected, otherwise red
-void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B);       //flashes the bottom leds 
-void OnNotify();
-void OnConnect();
+void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper = false);
+void Chaser(Color color, Lightbar LB, bool RandomTrailTaper = false);
+void ToggleLightbar(Lightbar LB, bool TurnOn = true, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
+void ToggleLightbar(Lightbar LB,  Color color, bool TurnOn = true);
+void ToggleLBDueToLight();
+void FlashLightbar(Lightbar LB, int numFlashes = 1, uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);
+bool IsRunningInDemoMode();
+
+// LiDar sensor related methods
 void SetupLidarSensors();
 void ReadLidarSensors();
-void BlinkBuiltInLEDs(uint8_t R = 0, uint8_t G = 255, uint8_t B = 0);
-void TurnOnFrontLightbar(bool Manually = false);
-void StrobeLightbar();
-void StrobeLightbarDemoMode();
-void LightTheFrontBar(uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);  //sets the lightbar (all leds) to the passed in color
-void LightTheRearBar(uint8_t R = 255, uint8_t G = 255, uint8_t B = 255);  //sets the rear lightbar (all leds) to the passed in color
-void TurnBuiltInsOn();
-void TurnBuiltInsOff();
-/*if TurnAllOn is false then FlasRandomly is looked at, if that is false then the ground effect will strobe*/
-void ToggleGroundEffect(uint8_t R = 255, uint8_t G = 255, uint8_t B = 255, bool TurnAllOn = false, bool FlashRandomly = false);
-void ToggleGroundEffectDemoMode(bool TurnAllOn = false, bool FlashRandomly = false);
-void setup_dbg();
-void loop_dbg();
-//void TurnOnHeadlights(bool Manually = false);
 
-//NOTE: May want to change this logic so that it only reads the front sensor if the rover is moving forward or the user is attempting to move
-//        forward.  Likewise, only read the rear sensor if the rover is in reverse or the user is attempting to move in reverse.
-//- add a donut feature, tie it to one of the buttons on the controller.  When activated, stop all motors, then spin them up in opposite directions at 255
-//- need to be able to speed the rover up by determining how far forward/aft the joystick is
-//- code up left & right joystick movement (the x axis)
+void SetupMotors();
+void SetupPins();
 
-//method implementations
-void setup_debug()
+void setup()
 {
-  // Setup the motors
-  //ledcSetup(1, 30000, 8); //we set up PWM channel 1, frequency of 30,000 Hz, 8 bit resolution
-  //ledcAttachPin(_inOne,1); //we're going to attach inOne to our new PWM channel
-  //ledcSetup(2, 30000, 8); //we'll set up the rest of our PWM channels, just like before.
-  //ledcAttachPin(_inTwo,2); //this time we'll need to set up 8 PWM channels!
-  //ledcSetup(3, 30000, 8);
-  //ledcAttachPin(_inThree,3);
-  //ledcSetup(4, 30000, 8);
-  //ledcAttachPin(_inFour,4);
-}
-
-void setup_LEDs()
-{
-  pinMode(PIN_PIXELS_RLB, OUTPUT);
-  pinMode(PIN_FLB_SWITCH, OUTPUT);
-
-  delay(250);
-
-  _wizzyLightbars.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _wizzyLightbars.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
-
-  delay(250);
-
-  //FlashRearLightbar();
+  Serial.begin(115200);
   
-  _wizzyLightbars.clear();
-  _wizzyLightbars.show();
-  digitalWrite(PIN_FLB_SWITCH, HIGH);
+  SetupPins();
+  SetupLightbars();
+  SetupMotors();
 
-  delay(250);
-  digitalWrite(PIN_FLB_SWITCH, LOW);
+  ToggleLightbar(GROUND_EFFECT, YELLOW, true);
 
-  LightTheRearBar(0, 0, 255);
-  _wizzyLightbars.show();
-  digitalWrite(PIN_FLB_SWITCH, HIGH);
-
-  _isTestingLEDsOnly = true;
-}
-
-void setupGE()
-{
-  pinMode(PIN_PIXELS_GELB, OUTPUT);
-  digitalWrite(PIN_PIXELS_GELB, LOW);
-
-  _groundEffectLB.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _groundEffectLB.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
-
-  delay(250);
-
-  ToggleGroundEffect(0, 0, 255, true, false);
-  delay(1000);
-}
-
-void loopGE()
-{
-  ToggleGroundEffect();
-  delay(1000);
-}
-
-//NOTE:  if the LiDar sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
-void setup() 
-{
-  pinMode(PIN_DEMO_MODE, INPUT_PULLDOWN);
-
-  pinMode(PIN_DEBUG_LED, OUTPUT);
-  pinMode(PIN_BT_CONNECTED_LED, OUTPUT);
   digitalWrite(PIN_DEBUG_LED, HIGH);
-  digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-  delay(500);
-
-  setupGE();
-
-  // Setup the motors
-  ledcSetup(1, 30000, 8); //we set up PWM channel 1, frequency of 30,000 Hz, 8 bit resolution
-  ledcAttachPin(_inOne,1); //we're going to attach inOne to our new PWM channel
-  ledcSetup(2, 30000, 8); //we'll set up the rest of our PWM channels, just like before.
-  ledcAttachPin(_inTwo,2); //this time we'll need to set up 8 PWM channels!
-  ledcSetup(3, 30000, 8);
-  ledcAttachPin(_inThree,3);
-  ledcSetup(4, 30000, 8);
-  ledcAttachPin(_inFour,4);
-
-  digitalWrite(PIN_BT_CONNECTED_LED, LOW);
-
-  pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(PIN_PHOTORESISTOR, INPUT);
-
-  pinMode(PIN_XSHUT_FRONT_LOX, OUTPUT);
-  pinMode(PIN_XSHUT_REAR_LOX, OUTPUT);
-
-  pinMode(PIN_FLB_SWITCH, OUTPUT);
-  pinMode(PIN_PIXELS_RLB, OUTPUT);
-  digitalWrite(PIN_PIXELS_RLB, LOW);
-
-  pinMode(PIN_PIXELS_GELB, OUTPUT);
-  digitalWrite(PIN_PIXELS_GELB, LOW);
- 
-  BlinkDebugLED(1);
-
-  digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-  delay(250);
-  digitalWrite(PIN_BT_CONNECTED_LED, LOW);
-  delay(1);
-
-  _builtInLEDs.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _builtInLEDs.setBrightness(255); // Full brightness
-
-  delay(250);
-
-  _wizzyLightbars.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _wizzyLightbars.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
-
-  delay(250);
-
-  _wizzyLightbars.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _wizzyLightbars.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
-
-  delay(250);
-
-  _groundEffectLB.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-  _groundEffectLB.setBrightness(MAX_LB_BRIGHTNESS); // Full brightness
-
-  delay(250);
-
-  FlashFrontLightbar();
-  delay(250);
-  FlashRearLightbar();
-  //StrobeLightbar();
-
-  //flash the red, white & blue ground effect
-  FlashBuiltInLEDsForDebug(255, 0, 0);
-  delay(125);
-  FlashBuiltInLEDsForDebug(255, 255, 255);
-  delay(125);
-  FlashBuiltInLEDsForDebug(0, 0, 255);
-  delay(125);
-  _builtInLEDs.clear();
-  _builtInLEDs.show();
-  //Turn on the rear bar...used for testing
-  //_wizzyLightbars.clear();
-  //LightTheRearBar();
-  //_earLightbar.show();
-
-  _lbBrightness = 128;
-  _wizzyLightbars.setBrightness(_lbBrightness); 
-
-  //Serial.begin(115200);
   
-  Ps3.attach(OnNotify);
-  Ps3.attachOnConnect(OnConnect);
-  Ps3.begin(_ps3MacAddr);
+  // for debug
+  Chaser(BLUE, FRONT_AND_REAR);
+  Chaser(BLUE, GROUND_EFFECT);
+  Chaser(BLUE, BUILT_IN);
 
-  //FlashBuiltInLEDs();
-
-#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__) || defined(__AVR_ATmega1280__) 
-  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
-#endif
-#if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__) 
-  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
-#endif
-#if defined(__ESP32__)
-  _lightCal = 1600;
-#endif
-
-  ToggleGroundEffect(255, 255, 255, true, false); //toggle ground effect on
-  delay(500);
-  ToggleGroundEffect(); //toggle ground effect off
-
-  Serial.print("Using light calibration of: ");
-  Serial.println(_lightCal, DEC);
-
-  BlinkDebugLED(5);
+  InitializePS4();
 
   SetupLidarSensors();
 
   delay(1000);
-  BlinkDebugLED(3);
-
-  //digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-  //digitalWrite(PIN_BT_CONNECTED_LED, LOW);
 
   _loopsBetweenBlinks = (LOOPS_BETWEEN_BLINKS + 1);
 
-  Serial.println("ESP32 Startup");
-}
-
-//this loop() is used for testing...might want to tie this into a button on the PS3
-void loop_debug() 
-{
-  digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-  digitalWrite(PIN_DEBUG_LED, HIGH);
-  delay(2000);
-
-  digitalWrite(PIN_DEBUG_LED, LOW);
-  delay(500);
-
-  digitalWrite(PIN_BT_CONNECTED_LED, LOW);
-  digitalWrite(PIN_DEBUG_LED, HIGH);
-  delay(500);
+  digitalWrite(PIN_DEBUG_LED, LOW);  
 }
 
 void loop()
-{
+{  
   if ( _loopsBetweenBlinks > LOOPS_BETWEEN_BLINKS )
   {
     _loopsBetweenBlinks = 0;
@@ -360,8 +237,11 @@ void loop()
     _loopsBetweenBlinks++;
   }
 
-  if ( !Ps3.isConnected() )
+  if ( !PS4.isConnected() )
   {
+    Serial.println("No PS4 controller connected...");
+    _showPS4Connection = true;
+    
     for ( int j = 0; j < 3; j++ )
     {
       digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
@@ -370,74 +250,98 @@ void loop()
       delay(100);
     }
 
-    for ( int j = 0; j < 3; j++ )
-    {
-      //flash the leds blue, but in a circular pattern
-      _builtInLEDs.clear();
-      _builtInLEDs.show();
-      delay(100);
-      _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-      _builtInLEDs.show();
-      delay(100);
-      _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 0));
-      _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-      _builtInLEDs.show();
-      delay(100);
-      _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 0));
-      _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-      _builtInLEDs.show();
-      delay(100);
-      _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 0));
-      _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-      _builtInLEDs.show();
-      delay(100);
-      _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 0));
-      _builtInLEDs.show();
-      delay(100);
-    }
+    Chaser(BLUE, BUILT_IN);
 
-    //FlashBuiltInLEDs();
-    Ps3.begin(_ps3MacAddr);
-    delay(2000);
+    // if( PS4.isConnected())
+    // {
+    //   FlashBuiltInLEDs(3, 0, 0, 255);
+    // }
+    // else
+    // { 
+    //   FlashBuiltInLEDs(3, 255, 0, 0);
+    // }
+    // PS4.begin(_ps4MacAddr);
+    // delay(2000);
   }
   else
   {
+    if ( _showPS4Connection ) { Serial.println("PS4 CONNECTED..."); _showPS4Connection = false; }
+
     digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
 
-    //FlashBuiltInLEDsForDebug(255, 255, 255);
+    //FlashLightbar(BUILT_IN);
     delay(125);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
 
     ReadLidarSensors();
 
-    delay(1);
+    delay(100);
+
+    if ( _wasPSButtonPressed )
+    {
+      int batteryLvl = PS4.Battery();
+
+      //(???) I believe the battery scale is 0 - 9 as the battery lvl always seems to be single digits
+      
+      Serial.printf("Battery Level: %d\n", PS4.Battery());
+
+      //(???) change this to low, medium & good
+      if ( batteryLvl <= 2 )
+      {
+        Serial.println("Battery Level is low, flashing controller red");
+        FlashController(255, 0, 0);
+      }
+      else
+      {
+        Serial.println("Battery Level is good, flashing controller green");
+        FlashController(0, 255, 0);
+      }
+      
+      _wasPSButtonPressed = false;
+    }
+    else
+    {
+        FlashController(0, 0, 255);
+    }
 
     if ( _didCircleChange )
-    {      
-      TurnOnFrontLightbar(true);
+    {
+      //TurnOnFrontLightbar(true);
+      ToggleLightbar(FRONT, true);
+      //delay here just long enough to allow the user to press and release the buttons...if the user wants to sit on 
+      //the buttons, well that's different code.  Anything less than 250 millis is not long enough
+      delay(250);
       _didCircleChange = false;
     }
-    // //if(Ps3.event.analog_changed.button.circle)
-    // //if(Ps3.data.button.circle)
-    // if(Ps3.event.analog_changed.button.circle)
-    // {
-    //   if ( Ps3.data.analog.button.circle > 0 )
-    //   {
-    //     TurnOnLightbar(true);
-    //   }
-    // }
 
     if(_didCrossChange)
     {
-          _keepFLBDemoStrobeOn = !_keepFLBDemoStrobeOn;
-    
-        StrobeLightbar();
+        _keepFLBDemoStrobeOn = !_keepFLBDemoStrobeOn;
+
+        if (_didL2Change)
+        {
+          if ( !_isRearLBOn )
+          {
+            Chaser(WHITE, FRONT_AND_REAR);    
+          }
+          else
+          {
+            Chaser(WHITE, FRONT);
+          }
+        }
+        else
+        {
+          Chaser(WHITE, FRONT);
+        }
+        
+
+        //delay here just long enough to allow the user to press and release the buttons...if the user wants to sit on 
+        //the buttons, well that's different code.  Anything less than 250 millis is not long enough
+        delay(250);
         _didCrossChange = false;
     }
-    else if ( _keepFLBDemoStrobeOn )
+    else if ( _keepFLBDemoStrobeOn && IsRunningInDemoMode() )
     {
-        StrobeLightbar();
+        Chaser(WHITE, FRONT);
     }
 
     if(_didSquareChange)
@@ -445,70 +349,202 @@ void loop()
       if ( !_isRearLBOn )
       {
         _isRearLBOn = true;
-        _wizzyLightbars.clear();
-        uint8_t _Red = random(1, 256);
-        uint8_t _Green = random(1, 256);
-        uint8_t _Blue = random(1, 256);
-        LightTheRearBar(_Red, _Green, _Blue);
+        uint8_t red = random(1, 256);
+        uint8_t green = random(1, 256);
+        uint8_t blue = random(1, 256);
+        //delay here just long enough to allow the user to press and release the buttons...if the user wants to sit on 
+        //the buttons, well that's different code.  Anything less than 250 millis is not long enough
+        ToggleLightbar(REAR, red, green, blue);
+        delay(250);
       }
       else
       {
         _isRearLBOn = false;
-        _wizzyLightbars.clear();
-        LightTheRearBar(0, 0, 0);
+        ToggleLightbar(REAR, false);
       }
 
-      _wizzyLightbars.show();
       _didSquareChange = false;
     }
 
+//    Serial.print("Triangle Changed: "); Serial.println(_didTriangleChange);
+//    Serial.print("L2 Changed: "); Serial.println(_didL2Change);
+//    Serial.print("ShowGroundEffect: "); Serial.println(_showGroundEffect);
     if(_didTriangleChange)
     {
       if ( _didL2Change )
       {
         _showGroundEffect = !_showGroundEffect;
 
-        if ( _showGroundEffect ) ToggleGroundEffect();
+//        Serial.print("Turning Ground Effect: "); (_showGroundEffect ? Serial.println("ON") : Serial.println("OFF") );
+
+        ToggleLightbar(GROUND_EFFECT, _showGroundEffect);
+
+//        Serial.println("Exiting if condition...");
       }
       else
       {
-        if ( _showGroundEffect ) ToggleGroundEffect();
-
-        if ( _areBuiltInsOn ) TurnBuiltInsOff(); 
-        else                  TurnBuiltInsOn();
+        if ( _areBuiltInsOn ) { ToggleLightbar(BUILT_IN, false); _areBuiltInsOn = false; }
+        else                  { ToggleLightbar(BUILT_IN); _areBuiltInsOn = true; }
       }
 
+      //delay here just long enough to allow the user to press and release the buttons...if the user wants to sit on 
+      //the buttons, well that's different code.  Anything less than 250 millis is not long enough
+      delay(250);
       _didL2Change = false;
       _didTriangleChange = false;
     }
     else
     {
-      if ( _showGroundEffect ) ToggleGroundEffect(); 
+      //if ( _showGroundEffect ) ToggleLightbar(GROUND_EFFECT);
     }
 
     if ( _didL1Change || _didR1Change )
     {
-      _useLiDar = ( _isPS3_L1_Pressed && _isPS3_R1_Pressed ? !_useLiDar : _useLiDar );
+      _useLiDar = ( _isPS4_L1_Pressed && _isPS4_R1_Pressed ? !_useLiDar : _useLiDar );
 
       if ( _useLiDar ) 
       {
-        FlashBuiltInLEDsForDebug(255, 255, 255);
-        delay(200);
-        FlashBuiltInLEDsForDebug(0, 0, 0);
+        FlashLightbar(BUILT_IN);
       }
       else
       {
-        FlashBuiltInLEDsForDebug(255, 0, 0);
-        delay(200);
-        FlashBuiltInLEDsForDebug(0, 0, 0);
+        FlashLightbar(BUILT_IN, 1, 255, 0, 0);
       }
-      delay(125);
+      
+      //delay here just long enough to allow the user to press and release the buttons...if the user wants to sit on 
+      //the buttons, well that's different code.  Anything less than 250 millis is not long enough
+      delay(250);
       _builtInLEDs.clear();
       _builtInLEDs.show();
     }
   }
 
-  TurnOnFrontLightbar();
+  _didL1Change = _didL2Change = _didR1Change = _didR2Change = false;
+  _didTriangleChange = _didCircleChange = _didCrossChange = _didSquareChange = false;
+  
+  ToggleLBDueToLight();
+
+//  Serial.println("End of loop...");
+}
+
+#pragma region SetUp Helper Methods
+void SetupPins()
+{
+  pinMode(PIN_DEMO_MODE, INPUT_PULLDOWN); //pin 34
+
+  pinMode(PIN_DEBUG_LED, OUTPUT);         //pin 32
+  pinMode(PIN_BT_CONNECTED_LED, OUTPUT);  //pin 26
+
+  //pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(PIN_PHOTORESISTOR, INPUT);      //pin 35
+
+  digitalWrite(PIN_DEBUG_LED, HIGH);
+  digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
+  delay(500);
+  
+  pinMode(PIN_PIXELS_GELB, OUTPUT);       //pin 23
+  digitalWrite(PIN_PIXELS_GELB, LOW);
+
+  //this is the switch, high allows the front LB to turn on
+  pinMode(PIN_FLB_SWITCH, OUTPUT);        //pin 14
+
+  pinMode(PIN_PIXELS_FLB, OUTPUT);        //pin 27
+  digitalWrite(PIN_PIXELS_FLB, LOW);
+}
+void SetupMotors()
+{
+  // Setup the motors
+  ledcSetup(1, 30000, 8); //we set up PWM channel 1, frequency of 30,000 Hz, 8 bit resolution
+  ledcAttachPin(_inOne,1); //we're going to attach inOne to our new PWM channel
+  ledcSetup(2, 30000, 8); //we'll set up the rest of our PWM channels, just like before.
+  ledcAttachPin(_inTwo,2); //this time we'll need to set up 8 PWM channels!
+  ledcSetup(3, 30000, 8);
+  ledcAttachPin(_inThree,3);
+  ledcSetup(4, 30000, 8);
+  ledcAttachPin(_inFour,4);
+
+  delay(250);
+}
+void SetupLightbars()
+{
+  // set up lightbars and built in LEDs
+  _builtInLEDs.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  _builtInLEDs.setBrightness(MAX_LB_BRIGHTNESS); 
+  delay(250);
+
+  _frontLightbar.begin();
+  _frontLightbar.setBrightness(MAX_LB_BRIGHTNESS);
+  delay(250);
+
+  _groundEffectLB.begin();
+  _groundEffectLB.setBrightness(MAX_LB_BRIGHTNESS);
+  delay(250);
+
+  // set colors for RWB Chaser sequence
+  _isRedWhiteOrBlue = RED;
+  _nextColor = WHITE;
+
+  // set brightness lower when we want to conserve battery
+  _lbBrightness = 128;
+  _frontLightbar.setBrightness(_lbBrightness); 
+
+  //light sensor calibration
+  #if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__) || defined(__AVR_ATmega1280__) 
+  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
+#endif
+#if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__) 
+  _lightCal = 300;   // 725 is a good value for normal ambient light, 300 to simulate lights out (IE finger over the sensor)
+#endif
+#if defined(__ESP32__)
+  _lightCal = 1600;
+#endif
+}
+void InitializePS4()
+{
+  Serial.print("Initializing PS4 to ");
+  Serial.println(_ps4MacAddr);
+
+  PS4.attach(OnNotify);
+  PS4.attachOnConnect(OnConnect);
+
+  if ( !PS4.begin(_ps4MacAddr) )
+  {
+    Serial.println("PS4 Failed to Initialize!!!");
+  }
+  else
+  {
+    Serial.println("PS4 Initialized...");
+  }
+}
+#pragma endregion Setup Helper Methods
+
+#pragma region LEDs
+void ToggleLBDueToLight()
+{    
+    //Take a reading using analogRead() on sensor pin and store it in LightVal
+    _lightVal = analogRead(PIN_PHOTORESISTOR);
+
+    //Serial.println(LightVal, DEC);
+    
+    //if LightVal is less than our initial reading (LightCal) minus 50 it is dark and
+    //turn pin HIGH. The (-50) part of the statement sets the sensitivity. The smaller
+    //the number the more sensitive the circuit will be to variances in light.
+    if (_lightVal < _lightCal)
+    {
+      ToggleLightbar(FRONT);
+      _areHeadlightsOn = true;
+    }
+    //else, it is bright, turn pin LOW
+    else
+    {
+      if ( !_areHeadlightsManuallyOn )
+      {
+        ToggleLightbar(FRONT, false);
+        //setting the pin low MUST be called here after the show, setting low prior to the .show will result in low red LEDs shown when the LB should be off
+        digitalWrite(PIN_FLB_SWITCH, LOW);
+        _areHeadlightsOn = false;
+      }
+    }
 }
 
 void BlinkDebugLED(int BlinkXTimes)
@@ -534,734 +570,349 @@ void BlinkDebugLED(int BlinkXTimes)
         digitalWrite(PIN_DEBUG_LED, LOW);     // turn the LED off by making the voltage LOW
         delay(100);                           // wait
   }
+  delay(250);
 }
 
-void BlinkBuiltInLEDs(uint8_t R, uint8_t G, uint8_t B)
-{
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
-    delay(300);
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));   
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.show();
-    delay(300);
-}
-
-void TurnOnFrontLightbar(bool Manually)
-{
-  if ( _isStrobeOn ) return;
-
-  LightTheFrontBar();
-
-  //now determine if the lightbar actually lights up or not
-  if ( Manually )
+// Helper method to take our color enum and create an RGB value tuple
+std::tuple<uint8_t, uint8_t, uint8_t> ToRGB8(Color color){
+  switch (color)
   {
-    if ( _areHeadlightsManuallyOn )
-    {
-      //BlinkDebugLED(5);
-      //digitalWrite(PIN_FLB_SWITCH, LOW);
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
-      //setting the pin low MUST be called here, setting low prior to the .show will result in low red LEDs shown when the LB should be off
-      digitalWrite(PIN_FLB_SWITCH, LOW);
-      _areHeadlightsManuallyOn = false;
-      _areHeadlightsOn = false;
-    }
-    else
-    {
-      digitalWrite(PIN_FLB_SWITCH, HIGH);
-      _wizzyLightbars.show();
-      _areHeadlightsManuallyOn = true;
-      _areHeadlightsOn = true;
-    }
+    case RED:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 0, 0);
+    case WHITE:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 255, 255);
+    case BLUE:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(0, 0, 255);
+    case GREEN:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(0, 255, 0);
+    case LIGHTBLUE:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(50, 147, 168);
+    case YELLOW:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(245, 242, 31);
+    case ORANGE:
+      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 77, 0);
+    default: 
+      return std::tuple<uint8_t, uint8_t, uint8_t>(255, 255, 255);
   }
-  else
-  {
-    //Take a reading using analogRead() on sensor pin and store it in LightVal
-    _lightVal = analogRead(PIN_PHOTORESISTOR);
+}
 
-    //Serial.println(LightVal, DEC);
+void Chaser(Color color, Lightbar LB, bool RandomTrailTaper)
+{
+  std::tuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
+  Chaser(std::get<0>(rgb), std::get<1>(rgb), std::get<2>(rgb), LB, RandomTrailTaper);
+}
+
+void Chaser(uint8_t R, uint8_t G, uint8_t B, Lightbar LB, bool RandomTrailTaper)
+{
+#pragma region Code To Consider
+
+    //the following code was from StrobeLightbar()...it set the switch vs. turning the lightbar on directly...that needs to be coded here
+    // _frontLightbar.clear();
+    // digitalWrite(PIN_FLB_SWITCH, HIGH);
+    // _frontLightbar.show();
+  
+    // digitalWrite(PIN_FLB_SWITCH, LOW);
+    // delay(1);
+
+    // if ( _areHeadlightsOn )
+    // {
+    //   LightTheFrontBar();
+    //   digitalWrite(PIN_FLB_SWITCH, HIGH);
+    //   _frontLightbar.show();
+    // }
+
+    // //BlinkDebugLED(5);
+    // _isStrobeOn = false;
+#pragma endregion Code To Consider
+
+    int firstPixel = 0;
+    int numberOfPixels;
+    Adafruit_NeoPixel* bar = &_groundEffectLB;
+
+    switch (LB)
+    {
+      case FRONT:
+        {
+          bar = &_frontLightbar;
+          numberOfPixels = NUM_PIXELS_ON_FLB;
+          break;
+        }
+      case REAR:
+        {
+          bar = &_frontLightbar;
+          firstPixel = NUM_PIXELS_ON_FLB;
+          numberOfPixels = (NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB);
+          break;
+        }
+      case GROUND_EFFECT:
+        {
+          bar = &_groundEffectLB;
+          numberOfPixels = NUM_PIXELS_ON_GELB;
+          break;
+        }
+      case FRONT_AND_REAR:
+        {
+          bar = &_frontLightbar;
+          numberOfPixels = (NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB);
+          break;
+        }
+      case BUILT_IN:
+      {
+        bar = &_builtInLEDs;
+        numberOfPixels = NUM_PIXELS_ON_DB;
+        break;
+      }
+      default:
+        {
+          bar = &_frontLightbar;
+          numberOfPixels = 6;
+          firstPixel = 0;
+          break;
+        }
+    }
+
+    uint8_t *colorR{new uint8_t[numberOfPixels]};
+    uint8_t *colorG{new uint8_t[numberOfPixels]};
+    uint8_t *colorB{new uint8_t[numberOfPixels]};
+
+    memset(colorR, 0, numberOfPixels);
+    memset(colorG, 0, numberOfPixels);
+    memset(colorB, 0, numberOfPixels);
+
+    long pixel = 0;
+    uint8_t pixelColorR = 0;
+    uint8_t pixelColorG = 0;
+    uint8_t pixelColorB = 0;
+
+    //go from left to right
+    for (int j = firstPixel; j < numberOfPixels; j++)
+    {
+      for (int p = 0; p < numberOfPixels; p++)
+      {       
+        pixel = p;
+
+        if ( RandomTrailTaper )
+        {
+          pixel = random(0, p);
+        }
+        
+        pixelColorR = colorR[pixel];
+        pixelColorG = colorG[pixel];
+        pixelColorB = colorB[pixel];
+
+        if ( pixelColorR > 0 || pixelColorG > 0 || pixelColorB > 0 )
+        {
+          pixelColorR = (pixelColorR > 0 ? ( pixelColorR / 2 ) : 0);
+          pixelColorG = (pixelColorG > 0 ? ( pixelColorG / 2 ) : 0);
+          pixelColorB = (pixelColorB > 0 ? ( pixelColorB / 2 ) : 0);
+
+          colorR[pixel] = pixelColorR;
+          colorG[pixel] = pixelColorG;
+          colorB[pixel] = pixelColorB;
+
+          bar->setPixelColor(pixel, bar->Color(pixelColorR, pixelColorG, pixelColorB));
+        }
+      }
+
+      //set the leading pixel/led
+      bar->setPixelColor(j, bar->Color(R, G, B));
+      bar->show();
+      colorR[j] = R;
+      colorG[j] = G;
+      colorB[j] = B;
+      delay(100);
+    }
+
+    pixel = 0;
+    pixelColorR = 0;
+    pixelColorG = 0;
+    pixelColorB = 0;
+
+    //go from right to left
+    for (int j = (numberOfPixels-1); j >= firstPixel; j--)
+    {
+      for (int p = 0; p < numberOfPixels; p++)
+      {
+        pixel = p;
+        
+        if ( RandomTrailTaper )
+        {
+          pixel = random(0, p);
+        }
+        
+        pixelColorR = colorR[pixel];
+        pixelColorG = colorG[pixel];
+        pixelColorB = colorB[pixel];
+        if ( pixelColorR > 0 || pixelColorG > 0 || pixelColorB > 0 )
+        {
+          pixelColorR = (pixelColorR > 0 ? ( pixelColorR / 2 ) : 0);
+          pixelColorG = (pixelColorG > 0 ? ( pixelColorG / 2 ) : 0);
+          pixelColorB = (pixelColorB > 0 ? ( pixelColorB / 2 ) : 0);
+
+          colorR[pixel] = pixelColorR;
+          colorG[pixel] = pixelColorG;
+          colorB[pixel] = pixelColorB;
+
+          bar->setPixelColor(pixel, bar->Color(pixelColorR, pixelColorG, pixelColorB));
+        }
+      }
+
+      //set the leading pixel/led
+      bar->setPixelColor(j, bar->Color(R, G, B));
+      bar->show();
+
+      colorR[j] = R;
+      colorG[j] = G;
+      colorB[j] = B;
+
+      delay(100);
+    }
+
+    bool areTherePixelsLeftToBeFaded = false;
+    pixel = 0;
+    pixelColorR = 0;
+    pixelColorG = 0;
+    pixelColorB = 0;
+
+    //fade out the trailing tail
+    for (int j = firstPixel; j < numberOfPixels; j++)
+    {
+      for (int p = 0; p < numberOfPixels; p++)
+      {
+        pixel = p;
+        
+        if ( RandomTrailTaper )
+        {
+          pixel = random(0, p);
+        }
+        
+        pixelColorR = colorR[pixel];
+        pixelColorG = colorG[pixel];
+        pixelColorB = colorB[pixel];
+        if ( pixelColorR > 0 || pixelColorG > 0 || pixelColorB > 0 )
+        {
+          areTherePixelsLeftToBeFaded = true;
+          pixelColorR = (pixelColorR > 0 ? ( pixelColorR / 2 ) : 0);
+          pixelColorG = (pixelColorG > 0 ? ( pixelColorG / 2 ) : 0);
+          pixelColorB = (pixelColorB > 0 ? ( pixelColorB / 2 ) : 0);
+
+          colorR[pixel] = pixelColorR;
+          colorG[pixel] = pixelColorG;
+          colorB[pixel] = pixelColorB;
+
+          bar->setPixelColor(pixel, bar->Color(pixelColorR, pixelColorG, pixelColorB));          
+        }
+      }
+
+      //set the leading pixel/led
+      bar->show();
+
+      delay(100);
+
+      if (!areTherePixelsLeftToBeFaded){break;}
+
+      areTherePixelsLeftToBeFaded = false;
+    }
+
+    delete [] colorR;
+    delete [] colorG;
+    delete [] colorB;
+
+    bar->clear();
+    bar->show();
+}
+
+void ToggleLightbar(Lightbar LB, Color color, bool TurnOn)
+{
+  std::tuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
+  ToggleLightbar(LB, TurnOn, std::get<0>(rgb), std::get<1>(rgb), std::get<2>(rgb));
+}
+
+void ToggleLightbar(Lightbar LB, bool TurnOn, uint8_t R, uint8_t G, uint8_t B)
+{
+    // default color is WHITE
+    Adafruit_NeoPixel *bar;
+    int firstPixel = 0;
+    int numberOfPixels = 0;
+    bool turnOffLBSw = false;
+    bool clearBar = true;
+
+    // turn the desired lightbar on or off
+    switch (LB)
+      {
+        case FRONT:
+          {
+            clearBar = false;
+            bar = &_frontLightbar;
+            numberOfPixels = NUM_PIXELS_ON_FLB;
+            if ( TurnOn ) { digitalWrite(PIN_FLB_SWITCH, HIGH); } 
+            else { turnOffLBSw = true; }
+            break;
+          }
+        case REAR:
+          {
+            // Rear and Front LBs are chained
+            clearBar = false;
+            bar = &_frontLightbar;
+            firstPixel = NUM_PIXELS_ON_FLB;
+            numberOfPixels = NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB;
+            break;
+          }
+        case GROUND_EFFECT:
+          {
+            bar = &_groundEffectLB;
+            numberOfPixels = NUM_PIXELS_ON_GELB;
+            break;
+          }
+        case FRONT_AND_REAR:
+          {
+            bar = &_frontLightbar;
+            numberOfPixels = (NUM_PIXELS_ON_FLB + NUM_PIXELS_ON_RLB);
+            if ( TurnOn ) { digitalWrite(PIN_FLB_SWITCH, HIGH); } 
+            else { turnOffLBSw = true; }
+            break;
+          }
+        case BUILT_IN:
+        {
+          bar = &_builtInLEDs;
+          numberOfPixels = NUM_PIXELS_ON_DB;
+          break;
+        }
+        default:
+          {
+            bar = &_frontLightbar;
+            numberOfPixels = 6;
+            if ( TurnOn ) { digitalWrite(PIN_FLB_SWITCH, HIGH); } 
+            else { turnOffLBSw = true; }
+            break;
+          }
+      }
+
+    if ( clearBar ) bar->clear();
     
-    //if LightVal is less than our initial reading (LightCal) minus 50 it is dark and
-    //turn pin HIGH. The (-50) part of the statement sets the sensitivity. The smaller
-    //the number the more sensitive the circuit will be to variances in light.
-    if (_lightVal < _lightCal)
+    if (TurnOn) 
     {
-      _wizzyLightbars.show();
-      digitalWrite(PIN_FLB_SWITCH, HIGH);      
-      _areHeadlightsOn = true;
-    }
-    //else, it is bright, turn pin LOW
-    else
-    {
-      if ( !_areHeadlightsManuallyOn )
-      {
-        _wizzyLightbars.clear();
-        _wizzyLightbars.show();
-        //setting the pin low MUST be called here, setting low prior to the .show will result in low red LEDs shown when the LB should be off
-        digitalWrite(PIN_FLB_SWITCH, LOW);
-        _areHeadlightsOn = false;
-      }
-    }
-  }  
-}
-
-void LightTheFrontBar(uint8_t R, uint8_t G, uint8_t B)
-{
-  //setup the lightbar to show, but don't turn it on just yet
-  for (int j = 0; j < NUM_PIXELS_ON_LB; j++)
-  {
-    _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(R, G, B));
-  }
-}
-
-void LightTheRearBar(uint8_t R, uint8_t G, uint8_t B)
-{
-  //setup the lightbar to show, but don't turn it on just yet
-  for (int j = 0; j < NUM_PIXELS_ON_RLB; j++)
-  {
-    _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(R, G, B));
-  }
-}
-
-void StrobeLightbar()
-{
-    if ( IsRunningInDemoMode() )
-    {
-      StrobeLightbarDemoMode();
-      return;
-    }
-
-    _isStrobeOn  = true;
-    if ( _areHeadlightsOn )
-    {
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
-      //setting the pin low MUST be called here, setting low prior to the .show will result in low red LEDs shown when the LB should be off
-      digitalWrite(PIN_FLB_SWITCH, LOW);
-    }
-
-    digitalWrite(PIN_FLB_SWITCH, HIGH);
-    delay(1);
-    _wizzyLightbars.clear();
-    _wizzyLightbars.show();
-    delay(100);
-
-    //long _Pixel = random(NUM_PIXELS_ON_LB);
-    uint8_t _FadeTo = 255;
-
-    //BlinkDebugLED(5);
-
-    int _TimesToStrobe = 1;
-    for ( int z = 0; z < _TimesToStrobe; z++ )
-    {
-      //going left to right
-      for ( int j = 0; j < NUM_PIXELS_ON_LB; j++ )
-      {
-        if ( j > 0 )
+        for(int i=firstPixel; i < numberOfPixels; i++)
         {
-          // _FadeTo = (_FadeTo / 2);
-          uint32_t _Color = _wizzyLightbars.getPixelColor(j);
-          if ( _Color > 0 )
-          {
-            _FadeTo = (_Color / 2);
-          }
-          else
-          {
-            _FadeTo = 0;
-          }
-          _wizzyLightbars.setPixelColor((j - 1), _wizzyLightbars.Color(0, 0, _FadeTo));
+          bar->setPixelColor(i, bar->Color(R, G, B));
         }
-
-        if ( j < NUM_PIXELS_ON_LB)
-        {
-          _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(0, 0, 255));
-        }
-
-        digitalWrite(PIN_FLB_SWITCH, HIGH);
-        _wizzyLightbars.show();
-        delay(100);
-      }
-
-      //BlinkDebugLED(5);
-
-      //going right to left
-      for ( int j = (NUM_PIXELS_ON_LB - 1); j >= 0 ; j-- )
-      {
-        if ( j < (NUM_PIXELS_ON_LB - 1) )
-        {
-          for ( int x = (NUM_PIXELS_ON_LB - 1); x > j; x-- )
-          {
-            // _FadeTo = (_FadeTo / 2);
-            uint32_t _Color = _wizzyLightbars.getPixelColor((j + 1));
-            if ( _Color > 0 )
-            {
-              _FadeTo = (_Color / 2);
-            }
-            else
-            {
-              _FadeTo = 0;
-            }
-
-            _wizzyLightbars.setPixelColor(x, _wizzyLightbars.Color(_FadeTo, 0, 0));
-          }
-        }
-
-        if ( j >= 0 )
-        {
-          _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(255, 0, 0));
-        }
-
-        digitalWrite(PIN_FLB_SWITCH, HIGH);
-        _wizzyLightbars.show();
-        delay(100);
-      }
-    }
-
-    _wizzyLightbars.clear();
-    digitalWrite(PIN_FLB_SWITCH, HIGH);
-    _wizzyLightbars.show();
-  
-    digitalWrite(PIN_FLB_SWITCH, LOW);
-    delay(1);
-
-    if ( _areHeadlightsOn )
-    {
-      LightTheFrontBar();
-      digitalWrite(PIN_FLB_SWITCH, HIGH);
-      _wizzyLightbars.show();
-    }
-
-    //BlinkDebugLED(5);
-    _isStrobeOn = false;
-}
-
-void StrobeLightbarDemoMode()
-{
-    _isStrobeOn  = true;
-    if ( _areHeadlightsOn )
-    {
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
-      //setting the pin low MUST be called here, setting low prior to the .show will result in low red LEDs shown when the LB should be off
-      digitalWrite(PIN_FLB_SWITCH, LOW);
-    }
-
-    digitalWrite(PIN_FLB_SWITCH, HIGH);
-    delay(1);
-    _wizzyLightbars.clear();
-    _wizzyLightbars.show();
-    delay(100);
-
-    //long _Pixel = random(NUM_PIXELS_ON_LB);
-    uint8_t _FadeTo = 255;
-
-    //BlinkDebugLED(5);
-
-    int _TimesToStrobe = 1;
-    for ( int z = 0; z < _TimesToStrobe; z++ )
-    {
-      //going left to right
-      for ( int j = 0; j < NUM_PIXELS_ON_LB; j++ )
-      {
-        if ( j > 0 )
-        {
-          // _FadeTo = (_FadeTo / 2);
-          uint32_t _Color = _wizzyLightbars.getPixelColor(j);
-          if ( _Color > 0 )
-          {
-            _FadeTo = (_Color / 2);
-          }
-          else
-          {
-            _FadeTo = 0;
-          }
-          _wizzyLightbars.setPixelColor((j - 1), _wizzyLightbars.Color(0, 0, _FadeTo));
-        }
-
-        if ( j < NUM_PIXELS_ON_LB)
-        {
-          _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(0, 0, 255));
-        }
-
-        digitalWrite(PIN_FLB_SWITCH, HIGH);
-        _wizzyLightbars.show();
-        delay(100);
-      }
-
-      //BlinkDebugLED(5);
-
-      //going right to left
-      for ( int j = (NUM_PIXELS_ON_LB - 1); j >= 0 ; j-- )
-      {
-        if ( j < (NUM_PIXELS_ON_LB - 1) )
-        {
-          for ( int x = (NUM_PIXELS_ON_LB - 1); x > j; x-- )
-          {
-            // _FadeTo = (_FadeTo / 2);
-            uint32_t _Color = _wizzyLightbars.getPixelColor((j + 1));
-            if ( _Color > 0 )
-            {
-              _FadeTo = (_Color / 2);
-            }
-            else
-            {
-              _FadeTo = 0;
-            }
-
-            _wizzyLightbars.setPixelColor(x, _wizzyLightbars.Color(_FadeTo, _FadeTo, 0));
-          }
-        }
-
-        if ( j >= 0 )
-        {
-          _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(255, 255, 0));
-        }
-
-        digitalWrite(PIN_FLB_SWITCH, HIGH);
-        _wizzyLightbars.show();
-        delay(100);
-      }
-    }
-
-    _wizzyLightbars.clear();
-    digitalWrite(PIN_FLB_SWITCH, HIGH);
-    _wizzyLightbars.show();
-  
-    digitalWrite(PIN_FLB_SWITCH, LOW);
-    delay(1);
-
-    if ( _areHeadlightsOn )
-    {
-      LightTheFrontBar();
-      digitalWrite(PIN_FLB_SWITCH, HIGH);
-      _wizzyLightbars.show();
-    }
-
-    //BlinkDebugLED(5);
-    _isStrobeOn = false;
-}
-
-/*
-    - Reset all sensors by setting all of their XSHUT pins low for delay(10), then set all XSHUT high to bring out of reset
-    - Keep sensor #1 awake by keeping XSHUT pin high
-    - Put all other sensors into shutdown by pulling XSHUT pins low
-    - Initialize sensor #1 with lox.begin(new_i2c_address) Pick any number but 0x29 and it must be under 0x7F. 
-        Going with 0x30 to 0x3F is probably OK.
-    - Keep sensor #1 awake, and now bring sensor #2 out of reset by setting its XSHUT pin high.
-    - Initialize sensor #2 with lox.begin(new_i2c_address) Pick any number but 0x29 and whatever you set the first sensor to
- */
-void SetupLidarSensors()
-{
-  if ( !_useLiDar ) return;
-
-  //FlashBuiltInLEDsForDebug(255, 255, 255); //white
-
-  // reset both front & rear lidar
-  if ( !_isFrontLidarOn ) digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
-  if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, LOW);
-  delay(50);
-
-  // turn both front & rear lidar on
-  if ( !_isFrontLidarOn ) digitalWrite(PIN_XSHUT_FRONT_LOX, HIGH);
-  if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, HIGH);
-  delay(50);
-
-  // keep the front on, turn off the rear
-  if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, LOW);
-
-  //FlashBuiltInLEDsForDebug(255, 0, 0); //red
-
-  // initing front
-  if ( !_isFrontLidarOn )
-  {
-    if(!_frontLox.begin(FRONT_FACING_LOX_I2C_ADDR)) 
-    {
-      FlashBuiltInLEDsForDebug(255, 255, 0); //yellow
-      Serial.println(F("Failed to boot first VL53L0X"));
-      _isFrontLidarOn = false;
     }
     else
     {
-      _isFrontLidarOn = true;
-    }
-    delay(50);
-    }
-
-  //FlashBuiltInLEDsForDebug(0, 0, 255); //blue
-
-  // activating rear
-  //digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
-  if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, HIGH);
-  delay(50);
-
-  //initing rear
-  if ( !_isRearLidarOn ) 
-  {
-    if(!_rearLox.begin(REAR_FACING_LOX_I2C_ADDR)) 
-    {
-      FlashBuiltInLEDsForDebug(0, 255, 0); //green
-      Serial.println(F("Failed to boot rear VL53L0X"));
-      _isRearLidarOn = false;
-    }
-    else
-    {
-      _isRearLidarOn = true;
-    }
-  }
-}
-
-void ReadLidarSensors() 
-{
-  if ( !_useLiDar ) 
-  {
-    BlinkDebugLED(2);
-    _isFrontObstacleDetected = false;
-    _isRearObstacleDetected = false;
-    return;
-  }
-  //else
-  //{
-  //  BlinkDebugLED(3);
-  //}
-
-  if ( !_isFrontLidarOn || !_isRearLidarOn ) SetupLidarSensors();
-
-  if ( _isFrontLidarOn ) _frontLox.rangingTest(&_front_LOX_Measure, false); // pass in 'true' to get debug data printout!
-  if ( _isRearLidarOn ) _rearLox.rangingTest(&_rear_LOX_Measure, false);   // pass in 'true' to get debug data printout!
-
-  //Serial.print("Reading a measurement... ");
-  //_FrontLox.rangingTest(&measure, false); // pass in 'true' to get debug data printout!
-  if ( !_areBuiltInsOn )
-  {
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(_redValue, 0, 0));   
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(_redValue, 0, 0));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(_redValue, 0, 0));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(_redValue, 0, 0));
-    _builtInLEDs.show();
-  }
-
-  bool stopForward = false;
-  bool stopBackward = false;
-
-  //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
-  if ( _isFrontLidarOn )
-  {
-    if (_front_LOX_Measure.RangeStatus != 4) 
-    { // phase failures have incorrect data
-      Serial.print("RedVal): "); Serial.println(_redValue);
-
-      if (_front_LOX_Measure.RangeMilliMeter < 300 ) 
+      //don't clear the bar (most likely this is a chained bar, that need to work independantly as well as one), but turn one bar off without changing the other bar
+      if ( !clearBar )
       {
-        //if ( measure.RangeMilliMeter <= 127) //within 5"
-        if (_front_LOX_Measure.RangeMilliMeter <= 250) //within 7 1/2", 200 is 7 3/4"
+        for(int i=firstPixel; i < numberOfPixels; i++)
         {
-          stopForward = true;
-          _redValue = 255;
-        }
-        else if ( _redValue < 255)
-        {
-          _redValue+=5;
+          bar->setPixelColor(i, bar->Color(0, 0, 0));
         }
       }
-      else if(_front_LOX_Measure.RangeMilliMeter > 300 && _redValue > 0)  //300mm is 11.811"
-      {
-        _redValue-=5;
-      }
-    } 
-    else 
-    {
-      Serial.println(" out of range ");
-      _redValue = 0;
     }
-  }
-  else 
-  {
-    Serial.println(" front lox is off ");
-    _redValue = 0;
-  }
+    
+    bar->show();
 
-  //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
-  if ( _isRearLidarOn )
-  {
-    if (_rear_LOX_Measure.RangeStatus != 4) 
-    { // phase failures have incorrect data
-      Serial.print("RedVal): "); Serial.println(_redValue);
-
-      if (_rear_LOX_Measure.RangeMilliMeter < 300 ) 
-      {
-        //if ( measure.RangeMilliMeter <= 127) //within 5"
-        if (_rear_LOX_Measure.RangeMilliMeter <= 250) //within 7 1/2", 200 is 7 3/4"
-        {
-          stopBackward = true;
-          _redValue = 255;
-        }
-        else if ( _redValue < 255)
-        {
-          _redValue+=5;
-        }
-      }
-      else if(_rear_LOX_Measure.RangeMilliMeter > 300 && _redValue > 0)  //300mm is 11.811"
-      {
-        _redValue-=5;
-      }
-    } 
-    else 
-    {
-      Serial.println(" out of range ");
-      _redValue = 0;
-    }
-  }
-  else 
-  {
-    Serial.println(" rear lox is off ");
-    _redValue = 0;
-  }
-
-  _isFrontObstacleDetected = stopForward;
-  _isRearObstacleDetected = stopBackward;
-
-  if ( (stopForward && _isMovingForward) || (stopBackward && _isMovingBackward) )
-  {       
-    //turn off forward (left side)
-    ledcWrite(1, 0);
-    //turn off reverse (left side)
-    ledcWrite(2, 0);
-
-    //turn off forward (right side)
-    ledcWrite(3, 0);
-    //turn off reverse (right side)
-    ledcWrite(4, 0);
-  }
-}
-
-bool IsRunningInDemoMode()
-{
-  //return false;
-  // pins 34 & zero were used for testing...when pin 34 is jumpered to pin zero then 4095 is read
-  return ( analogRead(PIN_DEMO_MODE) == 4095 );
-}
-
-void ToggleGroundEffect(uint8_t R, uint8_t G, uint8_t B, bool TurnAllOn, bool FlashRandomly)
-{
-  if ( IsRunningInDemoMode() )
-  {
-    // then set rgb color codes to to BW colors
-    ToggleGroundEffectDemoMode(TurnAllOn, FlashRandomly);
-    return;
-  }
-
-  _groundEffectLB.clear();
-  _groundEffectLB.show();
-  delay(100);
-
-  if ( TurnAllOn )
-  {
-      for ( int j = 0; j < NUM_PIXELS_ON_GELB; j++ )
-      {
-        _groundEffectLB.setPixelColor(j, _groundEffectLB.Color(R, G, B));
-        _groundEffectLB.show();
-        delay(100);
-      }
-  }
-  else
-  {
-    if ( !FlashRandomly)
-    {
-      for ( int j = 0; j < NUM_PIXELS_ON_GELB; j++ )
-      {
-        if ( j > 0 )
-        {
-          _groundEffectLB.setPixelColor((j - 1), _groundEffectLB.Color(0, 0, 0));
-        }
-
-        _groundEffectLB.setPixelColor(j, _groundEffectLB.Color(R, G, B));
-        _groundEffectLB.show();
-        delay(100);
-      }
-
-      for ( int j = (NUM_PIXELS_ON_GELB - 1); j >= 0 ; j-- )
-      {
-        if ( j < (NUM_PIXELS_ON_GELB - 1) )
-        {
-          _groundEffectLB.setPixelColor((j + 1), _groundEffectLB.Color(0, 0, 0));
-        }
-
-        _groundEffectLB.setPixelColor(j, _groundEffectLB.Color(R, G, B));
-        _groundEffectLB.show();
-        delay(100);
-      }
-
-      _groundEffectLB.clear();
-      _groundEffectLB.show();
-    }
-    else
-    {
-      long pixel = random(NUM_PIXELS_ON_GELB);
-
-      _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(R, G, B));
-      _groundEffectLB.show();
-      delay(100);
-      _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(0, 0, 0));
-
-      pixel = random(NUM_PIXELS_ON_GELB);
-      _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(R, G, B));
-      _groundEffectLB.show();
-      delay(100);
-      _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(R, G, B));
-
-      pixel = random(NUM_PIXELS_ON_GELB);
-      _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(0, 0, 0));
-      _groundEffectLB.show();
-      delay(100);
-      _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(0, 0, 0));
-
-      pixel = random(NUM_PIXELS_ON_GELB);
-      _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(R, G, B));
-      _groundEffectLB.show();
-      delay(100);
-      _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(R, G, B));
-
-      pixel = random(NUM_PIXELS_ON_GELB);
-      _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(0, 0, 0));
-      _groundEffectLB.show();
-      delay(100);
-      _groundEffectLB.clear();
-      _groundEffectLB.show();
-    }
-  }
-
-  _isGroundEffectOn = !_isGroundEffectOn;
-}
-
-void ToggleGroundEffectDemoMode(bool TurnAllOn, bool FlashRandomly)
-{
-  _groundEffectLB.clear();
-  _groundEffectLB.show();
-  delay(100);
-
-  if ( TurnAllOn )
-  {
-      for ( int j = 0; j < NUM_PIXELS_ON_GELB; j++ )
-      {
-        long rand = random(2);  // fetch a zero or one
-        if ( rand > 0 ) _groundEffectLB.setPixelColor(j, _groundEffectLB.Color(255, 255, 0));   // show yellow
-        else            _groundEffectLB.setPixelColor(j, _groundEffectLB.Color(0, 0, 255));     // show blue
-        _groundEffectLB.show();
-        delay(100);
-      }
-  }
-  else
-  {
-    if ( !FlashRandomly)
-    {
-      // show blue
-      for ( int j = 0; j < NUM_PIXELS_ON_GELB; j++ )
-      {
-        if ( j > 0 )
-        {
-          _groundEffectLB.setPixelColor((j - 1), _groundEffectLB.Color(0, 0, 0));
-        }
-
-        _groundEffectLB.setPixelColor(j, _groundEffectLB.Color(0, 0, 255));
-        _groundEffectLB.show();
-        delay(100);
-      }
-
-      for ( int j = (NUM_PIXELS_ON_GELB - 1); j >= 0 ; j-- )
-      {
-        if ( j < (NUM_PIXELS_ON_GELB - 1) )
-        {
-          _groundEffectLB.setPixelColor((j + 1), _groundEffectLB.Color(0, 0, 0));
-        }
-
-        _groundEffectLB.setPixelColor(j, _groundEffectLB.Color(0, 0, 255));
-        _groundEffectLB.show();
-        delay(100);
-      }
-
-      _groundEffectLB.clear();
-      _groundEffectLB.show();
-
-      // show yellow
-      for ( int j = 0; j < NUM_PIXELS_ON_GELB; j++ )
-      {
-        if ( j > 0 )
-        {
-          _groundEffectLB.setPixelColor((j - 1), _groundEffectLB.Color(0, 0, 0));
-        }
-
-        _groundEffectLB.setPixelColor(j, _groundEffectLB.Color(255, 255, 0));
-        _groundEffectLB.show();
-        delay(100);
-      }
-
-      for ( int j = (NUM_PIXELS_ON_GELB - 1); j >= 0 ; j-- )
-      {
-        if ( j < (NUM_PIXELS_ON_GELB - 1) )
-        {
-          _groundEffectLB.setPixelColor((j + 1), _groundEffectLB.Color(0, 0, 0));
-        }
-
-        _groundEffectLB.setPixelColor(j, _groundEffectLB.Color(255, 255, 0));
-        _groundEffectLB.show();
-        delay(100);
-
-      _groundEffectLB.clear();
-      _groundEffectLB.show();
-
-      }
-    }
-    else
-    {
-      long pixel = random(NUM_PIXELS_ON_GELB);
-      long color = random(2); // zero or one
-
-      if ( color > 0 ) _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(255, 255, 0));  // show yellow
-      else             _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(0, 0, 255));    // show blue
-      _groundEffectLB.show();
-      delay(100);      
-      _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(0, 0, 0));
-
-      pixel = random(NUM_PIXELS_ON_GELB);
-      color = random(2); // zero or one
-      if ( color > 0 ) _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(255, 255, 0));  // show yellow
-      else             _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(0, 0, 255));    // show blue
-      _groundEffectLB.show();
-      delay(100);
-      _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(0, 0, 0));
-
-      pixel = random(NUM_PIXELS_ON_GELB);
-      color = random(2); // zero or one
-      if ( color > 0 ) _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(255, 255, 0));  // show yellow
-      else             _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(0, 0, 255));    // show blue
-      _groundEffectLB.show();
-      delay(100);
-      _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(0, 0, 0));
-
-      pixel = random(NUM_PIXELS_ON_GELB);
-      color = random(2); // zero or one
-      if ( color > 0 ) _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(255, 255, 0));  // show yellow
-      else             _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(0, 0, 255));    // show blue
-      _groundEffectLB.show();
-      delay(100);
-      _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(0, 0, 0));
-
-      pixel = random(NUM_PIXELS_ON_GELB);
-      color = random(2); // zero or one
-      if ( color > 0 ) _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(255, 255, 0));  // show yellow
-      else             _groundEffectLB.setPixelColor(pixel, _groundEffectLB.Color(0, 0, 255));    // show blue
-      _groundEffectLB.show();
-      delay(100);
-      _groundEffectLB.clear();
-      _groundEffectLB.show();
-    }
-  }
-
-  _isGroundEffectOn = !_isGroundEffectOn;
+    //setting the pin low MUST be called here after the show, setting low prior to the .show will result in low red LEDs shown when the LB should be off
+    if ( turnOffLBSw ) digitalWrite(PIN_FLB_SWITCH, LOW);
 }
 
 void TurnBuiltInsOn()
@@ -1281,65 +932,436 @@ void TurnBuiltInsOff()
   _builtInLEDs.show();
   _areBuiltInsOn = false;
 }  
+
+void FlashLightbar(Lightbar LB, int numFlashes, uint8_t R, uint8_t G, uint8_t B)
+{
+ FlashLightbar(LB, numFlashes, Adafruit_NeoPixel::Color(R, G, B));
+}
+void FlashLightbar(Lightbar LB, int numFlashes, Color color)
+{
+  std::tuple<uint8_t, uint8_t, uint8_t> rgb = ToRGB8(color);
+  FlashLightbar(LB, numFlashes, std::get<0>(rgb), std::get<1>(rgb), std::get<2>(rgb));
+}
+
+void FlashLightbar(Lightbar LB, int numFlashes, uint32_t color)
+{
+  // turn desired LB on and then back off to flash it
+  for(int i=0; i< numFlashes; i++)
+  {
+    ToggleLightbar(LB, true, color);
+    ToggleLightbar(LB, false);
+  }
+}
+
+#pragma endregion LEDs
+
+bool IsRunningInDemoMode()
+{
+  //return false;
+  // pins 34 & zero were used for testing...when pin 34 is jumpered to pin zero then 4095 is read
+  return ( analogRead(PIN_DEMO_MODE) == 4095 );
+}
+
+#pragma region LiDar
+/*
+    - Reset all sensors by setting all of their XSHUT pins low for delay(10), then set all XSHUT high to bring out of reset
+    - Keep sensor #1 awake by keeping XSHUT pin high
+    - Put all other sensors into shutdown by pulling XSHUT pins low
+    - Initialize sensor #1 with lox.begin(new_i2c_address) Pick any number but 0x29 and it must be under 0x7F. 
+        Going with 0x30 to 0x3F is probably OK.
+    - Keep sensor #1 awake, and now bring sensor #2 out of reset by setting its XSHUT pin high.
+    - Initialize sensor #2 with lox.begin(new_i2c_address) Pick any number but 0x29 and whatever you set the first sensor to
+ */
+void SetupLidarSensors()
+{
+  pinMode(PIN_SDA_LOX, OUTPUT);           //pin 21    // LiDar data pin
+  pinMode(PIN_SCL_LOX, OUTPUT);           //pin 22    // LiDar clock pin
+
+  pinMode(PIN_XSHUT_FRONT_LOX, OUTPUT);   //pin 33
+  pinMode(PIN_XSHUT_REAR_LOX, OUTPUT);    //pin 25
+
+  Serial.print("using LiDar: ");
+  Serial.println(_useLiDar);
+
+  if ( !_useLiDar ) return;
+
+  Serial.println("Resetting LiDar sensors...");
+
+  // reset both front & rear lidar
+  if ( !_isFrontLidarOn ) digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
+  if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, LOW);
+  delay(50);
+
+  // turn both front & rear lidar on
+  if ( !_isFrontLidarOn ) digitalWrite(PIN_XSHUT_FRONT_LOX, HIGH);
+  if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, HIGH);
+  delay(50);
+
+  // keep the front on, turn off the rear
+  if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, LOW);
+
+  Serial.println("LiDar sensors are ready...");
+
+  Serial.print("Call begin on front LOX? ");
+  Serial.println(_isFrontLidarOn);
+
+  // initing front
+  if ( !_isFrontLidarOn )
+  {
+    if(!_frontLox.begin(FRONT_FACING_LOX_I2C_ADDR, true)) 
+    {
+      FlashLightbar(BUILT_IN, 1, 255, 255, 0); //yellow
+      Serial.println(F("Failed to boot first VL53L0X"));
+      _isFrontLidarOn = false;
+    }
+    else
+    {
+      Serial.println("Front LiDar is ready...");
+      _isFrontLidarOn = true;
+    }
+    delay(50);
+    }
+
+  // activating rear
+  //digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
+  if ( !_isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, HIGH);
+  delay(50);
+
+  Serial.print("Call begin on rear LOX? ");
+  Serial.println(_isRearLidarOn);
+
+  //initing rear
+  if ( !_isRearLidarOn ) 
+  {
+    if(!_rearLox.begin(REAR_FACING_LOX_I2C_ADDR)) 
+    {
+      FlashLightbar(BUILT_IN, 1, 0, 255, 0); //green
+      Serial.println(F("Failed to boot rear VL53L0X"));
+      _isRearLidarOn = false;
+    }
+    else
+    {
+      Serial.println("Rear LiDar is ready...");
+      _isRearLidarOn = true;
+    }
+  }
+}
+
+void ReadLidarSensors_Test()
+{
+  Serial.print("Is LiDar ready (Front:Rear)? ");
+  Serial.print(_isFrontLidarOn);
+  Serial.print(":");
+  Serial.println(_isRearLidarOn);
+
+  if ( _movementRequested ) {Serial.println("Movement since last read...");}
+  else                      {Serial.println("No movement since last read...");}
   
+  if ( !_isFrontLidarOn || !_isRearLidarOn ) { SetupLidarSensors(); }
+  else if ( _movementRequested ) { SetupLidarSensors(); _movementRequested = false; }
+
+  if ( _isFrontLidarOn ) digitalWrite(PIN_XSHUT_FRONT_LOX, LOW);
+  if ( _isRearLidarOn ) digitalWrite(PIN_XSHUT_REAR_LOX, HIGH);
+
+  //QUESTION: can these happen back to back or there should be some latching?
+  //if ( _isFrontLidarOn ) _frontLox.rangingTest(&_front_LOX_Measure, false); // pass in 'true' to get debug data printout!
+  if ( _isRearLidarOn ) _rearLox.rangingTest(&_rear_LOX_Measure, true);   // pass in 'true' to get debug data printout!
+
+  //Serial.print("Reading a measurement... ");
+
+  //if either are on, turn on the red leds
+  int redValue = (_frontRedValue + _rearRedValue) > 255 ? 255 : (_frontRedValue + _rearRedValue);
+
+  ToggleLightbar(BUILT_IN, true, redValue, 0, 0);
+
+  bool stopBackward = false;
+  int rangeMillis = 0;
+
+  //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
+  if ( _isRearLidarOn )
+  {
+    Serial.print("Reading Rear LiDar....");
+    if (_rear_LOX_Measure.RangeStatus != 4) // phase failures have incorrect data
+    { 
+      Serial.print("Rear RedVal: "); Serial.println(_rearRedValue);
+      rangeMillis = _rear_LOX_Measure.RangeMilliMeter;
+      Serial.print("Rear range is (mm): "); Serial.println(rangeMillis);
+
+      if (_rear_LOX_Measure.RangeMilliMeter < 300 ) 
+      {
+        //if ( measure.RangeMilliMeter <= 127) //within 5"
+        if (_rear_LOX_Measure.RangeMilliMeter <= 250) //within 7 1/2", 200 is 7 3/4"
+        {
+          stopBackward = true;
+          _rearRedValue = 255;
+        }
+        else if ( _rearRedValue < 255)
+        {
+          _rearRedValue+=5;
+        }
+      }
+      else if(_rear_LOX_Measure.RangeMilliMeter > 300 && _rearRedValue > 0)  //300mm is 11.811"
+      {
+        //_rearRedValue-=5;
+        Serial.println("Nothing close to rear LiDar ");
+        _rearRedValue = 0;
+      }
+    } 
+    else 
+    {
+      Serial.println("rear out of range ");
+      _rearRedValue = 0;
+    }
+  }
+  else 
+  {
+    Serial.println("rear lox is off ");
+    _rearRedValue = 0;
+  }
+
+  _isRearObstacleDetected = stopBackward;
+
+  Serial.print("Rear obstacle detected? "); Serial.println((_isRearObstacleDetected ? "TRUE" : "FALSE"));
+
+//  if ( (stopBackward && _isMovingBackward) )
+//  {       
+//    //turn off forward (left side)
+//    ledcWrite(1, 0);
+//    //turn off reverse (left side)
+//    ledcWrite(2, 0);
+//
+//    //turn off forward (right side)
+//    ledcWrite(3, 0);
+//    //turn off reverse (right side)
+//    ledcWrite(4, 0);
+//  }
+}
+
+void ReadLidarSensors() 
+{
+  if ( !_useLiDar ) 
+  {
+    //BlinkDebugLED(2);
+    _isFrontObstacleDetected = false;
+    _isRearObstacleDetected = false;
+    return;
+  }
+
+  Serial.print("Is LiDar ready (Front:Rear)? ");
+  Serial.print(_isFrontLidarOn);
+  Serial.print(":");
+  Serial.println(_isRearLidarOn);
+
+  if ( _movementRequested ) {Serial.println("Movement since last read...");}
+  else                      {Serial.println("No movement since last read...");}
+  
+  if ( !_isFrontLidarOn || !_isRearLidarOn ) { SetupLidarSensors(); }
+  else if ( _movementRequested ) { SetupLidarSensors(); _movementRequested = false; }
+
+  if ( _isFrontLidarOn ) _frontLox.rangingTest(&_front_LOX_Measure, false); // pass in 'true' to get debug data printout!
+  if ( _isRearLidarOn ) _rearLox.rangingTest(&_rear_LOX_Measure, true);   // pass in 'true' to get debug data printout!
+
+  //Serial.print("Reading a measurement... ");
+  //_FrontLox.rangingTest(&measure, false); // pass in 'true' to get debug data printout!
+  if ( !_areBuiltInsOn )
+  {
+    //if either are on, turn on the red leds
+    int redValue = (_frontRedValue + _rearRedValue) > 255 ? 255 : (_frontRedValue + _rearRedValue);
+
+    ToggleLightbar(BUILT_IN, true, redValue, 0, 0);
+  }
+
+  bool stopForward = false;
+  bool stopBackward = false;
+  int rangeMillis = 0;
+
+  //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
+  if ( _isFrontLidarOn )
+  {
+    //Serial.print("Reading Front LiDar....");
+    if (_front_LOX_Measure.RangeStatus != 4) 
+    { // phase failures have incorrect data
+      //Serial.print("Front RedVal: "); Serial.println(_frontRedValue);
+      rangeMillis = _front_LOX_Measure.RangeMilliMeter;
+      //Serial.print("Front range is (mm): "); Serial.println(rangeMillis);
+
+      if (_front_LOX_Measure.RangeMilliMeter < 300 ) 
+      {
+        //if ( measure.RangeMilliMeter <= 127) //within 5"
+        if (_front_LOX_Measure.RangeMilliMeter <= 250) //within 7 1/2", 200 is 7 3/4"
+        {
+          stopForward = true;
+          _frontRedValue = 255;
+        }
+        else if ( _frontRedValue < 255)
+        {
+          _frontRedValue+=5;
+        }
+      }
+      else if(_front_LOX_Measure.RangeMilliMeter > 300 && _frontRedValue > 0)  //300mm is 11.811"
+      {
+        //_frontRedValue-=5;
+        //Serial.println("Nothing close to front LiDar ");
+        _frontRedValue = 0;
+      }
+    } 
+    else 
+    {
+      //Serial.println("front out of range ");
+      _frontRedValue = 0;
+    }
+  }
+  else 
+  {
+    //Serial.println("front lox is off ");
+    _frontRedValue = 0;
+  }
+
+  rangeMillis = 0;
+  
+  //NOTE:  if the sensor is acting weird, verify the protective file (yellow or orange) has been removed from the face of the LiDar sensor
+  if ( _isRearLidarOn )
+  {
+    Serial.print("Reading Rear LiDar....");
+    if (_rear_LOX_Measure.RangeStatus != 4) 
+    { // phase failures have incorrect data
+      Serial.print("Rear RedVal: "); Serial.println(_rearRedValue);
+      rangeMillis = _rear_LOX_Measure.RangeMilliMeter;
+      Serial.print("Rear range is (mm): "); Serial.println(rangeMillis);
+
+      if (_rear_LOX_Measure.RangeMilliMeter < 300 ) 
+      {
+        //if ( measure.RangeMilliMeter <= 127) //within 5"
+        if (_rear_LOX_Measure.RangeMilliMeter <= 250) //within 7 1/2", 200 is 7 3/4"
+        {
+          stopBackward = true;
+          _rearRedValue = 255;
+        }
+        else if ( _rearRedValue < 255)
+        {
+          _rearRedValue+=5;
+        }
+      }
+      else if(_rear_LOX_Measure.RangeMilliMeter > 300 && _rearRedValue > 0)  //300mm is 11.811"
+      {
+        //_rearRedValue-=5;
+        Serial.println("Nothing close to rear LiDar ");
+        _rearRedValue = 0;
+      }
+    } 
+    else 
+    {
+      Serial.println("rear out of range ");
+      _rearRedValue = 0;
+    }
+  }
+  else 
+  {
+    Serial.println("rear lox is off ");
+    _rearRedValue = 0;
+  }
+
+  _isFrontObstacleDetected = stopForward;
+  _isRearObstacleDetected = stopBackward;
+
+  Serial.print("Front obstacle detected? "); Serial.println((_isFrontObstacleDetected ? "TRUE" : "FALSE"));
+  Serial.print("Rear obstacle detected? "); Serial.println((_isRearObstacleDetected ? "TRUE" : "FALSE"));
+
+  if ( (stopForward && _isMovingForward) || (stopBackward && _isMovingBackward) )
+  {       
+    //turn off forward (left side)
+    ledcWrite(1, 0);
+    //turn off reverse (left side)
+    ledcWrite(2, 0);
+
+    //turn off forward (right side)
+    ledcWrite(3, 0);
+    //turn off reverse (right side)
+    ledcWrite(4, 0);
+  }
+}
+
+#pragma endregion LiDar
+
+#pragma region PS4
+int _lastR1Value = 0;
+int _lastR2Value = 0;
+int _lastL1Value = 0;
+int _lastL2Value = 0;
+
 void OnNotify()
 {
-    //BlinkDebugLED(1);
+  //BlinkDebugLED(1);
 
-    _leftX = (Ps3.data.analog.stick.lx);
-    _leftY = (Ps3.data.analog.stick.ly);
-    _rightX = (Ps3.data.analog.stick.rx);
-    _rightY = (Ps3.data.analog.stick.ry);
+  _leftX = PS4.LStickX();
+  _leftY = PS4.LStickY();
+  _rightX = PS4.RStickX();
+  _rightY = PS4.RStickY();
 
-    if (Ps3.event.analog_changed.button.l1)
-    {
+  if ( PS4.L1() != _lastL1Value )
+  {    
       _didL1Change = true;
-      _isPS3_L1_Pressed = ( Ps3.data.analog.button.l1 > 0 );
-    }
+      _isPS4_L1_Pressed = ( PS4.L1() > 0 );
+      //_isPS4_L1_Pressed = true;
+      _lastL1Value = PS4.L1();
+  }
 
-    if (Ps3.event.analog_changed.button.l2)
-    {
+  if ( PS4.L2Value() != _lastL2Value )
+  {    
       _didL2Change = true;
-      _isPS3_L2_Pressed = ( Ps3.data.analog.button.l2 > 0 );
-    }
+      _isPS4_L2_Pressed = ( PS4.L2Value() > 0 );
+  }
 
-    if (Ps3.event.analog_changed.button.r1)
-    {
+  if ( PS4.R1() != _lastR1Value )
+  {    
       _didR1Change = true;
-      _isPS3_R1_Pressed = ( Ps3.data.analog.button.r1 > 0 );
-    }
+      _isPS4_R1_Pressed = ( PS4.R1() > 0 );
+      _lastR1Value = PS4.R1();
+  }
 
-    if(Ps3.event.analog_changed.button.circle)
-    {
-      if ( Ps3.data.analog.button.circle > 0 )
-      {
-        _didCircleChange = true;
-      }
-    }
+  if ( PS4.R2Value() != _lastR2Value )
+  {    
+      _didR2Change = true;
+      _isPS4_R2_Pressed = ( PS4.R2Value() > 0 );
+  }
 
-    if(Ps3.event.analog_changed.button.triangle)
+//(???) need to had logic here to determine if the button state has changed
+  if( PS4.Circle() )
+  {
+    if ( PS4.Circle() > 0 )
     {
-      if ( Ps3.data.analog.button.triangle > 0 )
-      {
-        _didTriangleChange = true;
-      }
+      _didCircleChange = true;
     }
+  }
 
-    if(Ps3.event.analog_changed.button.cross)
+  if( PS4.Triangle() )
+  {
+    if ( PS4.Triangle() > 0 )
     {
-      if ( Ps3.data.analog.button.cross > 0 )
-      {
-        _didCrossChange = true;
-      }
+      _didTriangleChange = true;
     }
+  }
 
-    if(Ps3.event.analog_changed.button.square)
+  if( PS4.Cross() )
+  {
+    if ( PS4.Cross() > 0 )
     {
-      if ( Ps3.data.analog.button.square > 0 )
-      {
-        _didSquareChange = true;
-      }
+      _didCrossChange = true;
     }
+  }
+
+  if( PS4.Square() )
+  {
+    if ( PS4.Square() > 0 )
+    {
+      _didSquareChange = true;
+    }
+  }
+
+  if ( PS4.PSButton() )
+  {
+    _wasPSButtonPressed = true;
+  }
 
 //     //Notes:
 //     //
@@ -1396,7 +1418,7 @@ void OnNotify()
 //     //  //turn off reverse (left side)
 //     //  ledcWrite(2, 0);
 //     //}
-// 	  //
+//    //
 //     //if ( rightX < -5 ) //the right joystick is being pushed to the left
 //     //{
 //     //  //turn on forward (right side)
@@ -1419,344 +1441,154 @@ void OnNotify()
 //     //  ledcWrite(4, 0);
 //     //}
 
-
-    if ( _leftY < -5 ) //the joystick is being pushed forward
-    {
-      if ( !_isFrontObstacleDetected )
-      {
-        //turn on forward (left side)
-        ledcWrite(1, (abs(_leftY) + 127));
-        //turn off reverse (left side)
-        ledcWrite(2, 0);
-        _isMovingForward = true;
-        _isMovingBackward = false;
-      }
-    }
-    else if ( _leftY > 5 && !_isRearObstacleDetected ) //the joystick is being pulled aft
+  if ( _leftY > 5 ) //the joystick is being pushed forward
+  {
+    Serial.println("going forward...");
+    if ( !_isFrontObstacleDetected )
     {
       //turn on forward (left side)
-      ledcWrite(1, 0);
-      //turn on reverse (left side)
-      ledcWrite(2, (abs(_leftY) + 127));
-      _isMovingForward = false;
-      _isMovingBackward = true;
-    }
-    else
-    {
-      //turn off forward (left side)
-      ledcWrite(1, 0);
+      ledcWrite(1, (abs(_leftY) + 127));
       //turn off reverse (left side)
       ledcWrite(2, 0);
-      _isMovingForward = false;
+      _isMovingForward = true;
       _isMovingBackward = false;
+      _movementRequested = true;
     }
-	
-    if ( _rightY < -5 ) //the joystick is being pushed forward
-    {
-      if ( !_isFrontObstacleDetected )
-      {
-        //turn on forward (right side)
-        ledcWrite(3, (abs(_rightY) + 127));
-        //turn off reverse (right side)
-        ledcWrite(4, 0);
-        _isMovingForward = true;
-        _isMovingBackward = false;
-      }
-    }
-    else if (_rightY > 5 && !_isRearObstacleDetected)  // the joystick is being pulled aft
+  }
+  else if ( _leftY < -5 && !_isRearObstacleDetected ) //the joystick is being pulled aft
+  {
+    Serial.println("going backward...");
+
+    //turn on forward (left side)
+    ledcWrite(1, 0);
+    //turn on reverse (left side)
+    ledcWrite(2, (abs(_leftY) + 127));
+    _isMovingForward = false;
+    _isMovingBackward = true;
+    _movementRequested = true;
+  }
+  else
+  {
+    //turn off forward (left side)
+    ledcWrite(1, 0);
+    //turn off reverse (left side)
+    ledcWrite(2, 0);
+    _isMovingForward = false;
+    _isMovingBackward = false;
+  }
+
+  if ( _rightY > 5 ) //the joystick is being pushed forward
+  {
+    if ( !_isFrontObstacleDetected )
     {
       //turn on forward (right side)
-      ledcWrite(3, 0);
-      //turn on reverse (right side)
-      ledcWrite(4, (abs(_rightY) + 127));
-      _isMovingForward = false;
-      _isMovingBackward = true;
-    }
-    else
-    {
-      //turn off forward (right side)
-      ledcWrite(3, 0);
+      ledcWrite(3, (abs(_rightY) + 127));
       //turn off reverse (right side)
       ledcWrite(4, 0);
-      _isMovingForward = false;
+      _isMovingForward = true;
       _isMovingBackward = false;
+      _movementRequested = true;
     }
+  }
+  else if (_rightY < -5 && !_isRearObstacleDetected)  // the joystick is being pulled aft
+  {
+    //turn on forward (right side)
+    ledcWrite(3, 0);
+    //turn on reverse (right side)
+    ledcWrite(4, (abs(_rightY) + 127));
+    _isMovingForward = false;
+    _isMovingBackward = true;
+    _movementRequested = true;
+  }
+  else
+  {
+    //turn off forward (right side)
+    ledcWrite(3, 0);
+    //turn off reverse (right side)
+    ledcWrite(4, 0);
+    _isMovingForward = false;
+    _isMovingBackward = false;
+  }
 
 
-    ////all four wheels oppossing direction...basically it will spin in a circle...donuts!!!
-    //if ( _rightY < -5 )
-    //{
-    //  //forward
-    //  ledcWrite(3, (abs(_rightY) + 127));
-    //}
-    //else if (_rightY > 5)
-    //{
-    //  ledcWrite(3, 0);
-    //}
+  ////all four wheels oppossing direction...basically it will spin in a circle...donuts!!!
+  //if ( _rightY < -5 )
+  //{
+  //  //forward
+  //  ledcWrite(3, (abs(_rightY) + 127));
+  //}
+  //else if (_rightY > 5)
+  //{
+  //  ledcWrite(3, 0);
+  //}
 }
 
 void OnConnect()
 {
     digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(2000);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
+    FlashLightbar(BUILT_IN, 3, 0, 0, 255);
     digitalWrite(PIN_BT_CONNECTED_LED, LOW);
+
+    // Sets the color of the controller's front light
+    // Params: Red, Green,and Blue
+    // See here for details: https://www.w3schools.com/colors/colors_rgb.asp
+    PS4.setLed(0, 0, 255);
+    //nextRainbowColor();
+
+    // Sets how fast the controller's front light flashes
+    // Params: How long the light is on in ms, how long the light is off in ms
+    // Range: 0->2550 ms, Set to 0, 0 for the light to remain on
+    //PS4.setFlashRate(PS4.LStickY() * 10, PS4.RStickY() * 10);
+    PS4.setFlashRate(250, 250);
+
+    // Sets the rumble of the controllers
+    // Params: Weak rumble intensity, Strong rumble intensity
+    // Range: 0->255
+    //PS4.setRumble(PS4.L2Value(), PS4.R2Value());
+    PS4.setRumble(0, 255);
+
+    // Sends data set in the above three instructions to the controller
+    PS4.sendToController();
+
+    // Don't send data to the controller immediately, will cause buffer overflow
+    Serial.println("Connected...");
+    
+    //PS4.setRumble(100, 100);
+    delay(10);
 }
 
-void FlashFrontLightbar(bool FlashRandomly)
+void FlashController(int R, int G, int B)
 {
-    digitalWrite(PIN_FLB_SWITCH, HIGH);
-    _wizzyLightbars.clear();
-    _wizzyLightbars.show();
-    delay(100);
+    // Sets the color of the controller's front light
+    // Params: Red, Green,and Blue
+    // See here for details: https://www.w3schools.com/colors/colors_rgb.asp
+    PS4.setLed(R, G, B);
 
-    if ( !FlashRandomly)
-    {
-      for ( int j = 0; j < NUM_PIXELS_ON_LB; j++ )
-      {
-        if ( j > 0 )
-        {
-          _wizzyLightbars.setPixelColor((j - 1), _wizzyLightbars.Color(0, 0, 0));
-        }
+    // Sets how fast the controller's front light flashes
+    // Params: How long the light is on in ms, how long the light is off in ms
+    // Range: 0->2550 ms, Set to 0, 0 for the light to remain on
+    //PS4.setFlashRate(PS4.LStickY() * 10, PS4.RStickY() * 10);
+    PS4.setFlashRate(250, 250);
 
-        _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(255, 255, 255));
-        _wizzyLightbars.show();
-        delay(100);
-      }
+    PS4.setRumble(0, 0);
 
-      for ( int j = (NUM_PIXELS_ON_LB - 1); j >= 0 ; j-- )
-      {
-        if ( j < (NUM_PIXELS_ON_LB - 1) )
-        {
-          _wizzyLightbars.setPixelColor((j + 1), _wizzyLightbars.Color(0, 0, 0));
-        }
-
-        _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(255, 255, 255));
-        _wizzyLightbars.show();
-        delay(100);
-      }
-
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
-    }
-    else
-    {
-      long _Pixel = random(NUM_PIXELS_ON_LB);
-
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-      _wizzyLightbars.show();
-      delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
-
-      _Pixel = random(NUM_PIXELS_ON_LB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-      _wizzyLightbars.show();
-      delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-
-      _Pixel = random(NUM_PIXELS_ON_LB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
-      _wizzyLightbars.show();
-      delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
-
-      _Pixel = random(NUM_PIXELS_ON_LB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-      _wizzyLightbars.show();
-      delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-
-      _Pixel = random(NUM_PIXELS_ON_LB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
-      _wizzyLightbars.show();
-      delay(100);
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
-    }
-
-    digitalWrite(PIN_FLB_SWITCH, LOW);
+    PS4.sendToController();
+    delay(10);
 }
 
-void FlashRearLightbar(bool FlashRandomly)
-{
-    _wizzyLightbars.clear();
-    _wizzyLightbars.show();
-    delay(100);
-
-    if ( !FlashRandomly)
-    {
-      for ( int j = 0; j < NUM_PIXELS_ON_RLB; j++ )
-      {
-        if ( j > 0 )
-        {
-          _wizzyLightbars.setPixelColor((j - 1), _wizzyLightbars.Color(0, 0, 0));
-        }
-
-        _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(255, 255, 255));
-        _wizzyLightbars.show();
-        delay(100);
-      }
-
-      for ( int j = (NUM_PIXELS_ON_RLB - 1); j >= 0 ; j-- )
-      {
-        if ( j < (NUM_PIXELS_ON_RLB - 1) )
-        {
-          _wizzyLightbars.setPixelColor((j + 1), _wizzyLightbars.Color(0, 0, 0));
-        }
-
-        _wizzyLightbars.setPixelColor(j, _wizzyLightbars.Color(255, 255, 255));
-        _wizzyLightbars.show();
-        delay(100);
-      }
-
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
-    }
-    else
-    {
-      long _Pixel = random(NUM_PIXELS_ON_RLB);
-
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-      _wizzyLightbars.show();
-      delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
-
-      _Pixel = random(NUM_PIXELS_ON_RLB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-      _wizzyLightbars.show();
-      delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-
-      _Pixel = random(NUM_PIXELS_ON_RLB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
-      _wizzyLightbars.show();
-      delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
-
-      _Pixel = random(NUM_PIXELS_ON_RLB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-      _wizzyLightbars.show();
-      delay(100);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(255, 0, 0));
-
-      _Pixel = random(NUM_PIXELS_ON_RLB);
-      _wizzyLightbars.setPixelColor(_Pixel, _wizzyLightbars.Color(0, 0, 0));
-      _wizzyLightbars.show();
-      delay(100);
-      _wizzyLightbars.clear();
-      _wizzyLightbars.show();
-    }
-}
-
-void FlashBuiltInLEDs()
-{
-  if ( Ps3.isConnected() )
-  {
-    digitalWrite(PIN_BT_CONNECTED_LED, HIGH);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(0, 0, 255));
-    _builtInLEDs.show();
-    delay(500);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
-    digitalWrite(PIN_BT_CONNECTED_LED, LOW);
-  }
-  else
-  {
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
-    delay(200);
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(255, 0, 0));
-    _builtInLEDs.show();
-    delay(500);
-    _builtInLEDs.clear();
-    _builtInLEDs.show();
-  }
-}
-
-void FlashBuiltInLEDsForDebug(uint8_t R, uint8_t G, uint8_t B)
-{
-  
-    _builtInLEDs.clear();
-    _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
-    _builtInLEDs.show();
-    delay(200);
-    // _builtInLEDs.clear();
-    // _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.show();
-    // delay(200);
-    // _builtInLEDs.clear();
-    // _builtInLEDs.setPixelColor(0, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(1, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(2, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.setPixelColor(3, _builtInLEDs.Color(R, G, B));
-    // _builtInLEDs.show();
-    // delay(200);
-    // _builtInLEDs.clear();
-    // _builtInLEDs.show();
-}
+// Calculates the next value in a rainbow sequence
+//void nextRainbowColor() {
+//  if (r > 0 && b == 0) {
+//    r--;
+//    g++;
+//  }
+//  if (g > 0 && r == 0) {
+//    g--;
+//    b++;
+//  }
+//  if (b > 0 && g == 0) {
+//    r++;
+//    b--;
+//  }
+//}
+#pragma endregion PS4
